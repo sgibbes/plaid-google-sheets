@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+    <script>
+      function initPlaidLink(link_token) {
+        const handler = Plaid.create({
+          token: link_token,
+          onSuccess: function(public_token, metadata) {
+            google.script.run.withSuccessHandler(() => {
+              google.script.host.close();
+            }).handlePublicToken(public_token);
+          },
+          onExit: function(err, metadata) {
+            console.error('User exited Plaid Link:', err);
+          }
+        });
+
+        handler.open();
+      }
+
+      google.script.run
+        .withSuccessHandler(initPlaidLink)
+        .createLinkToken();
+    </script>
+  </head>
+  <body>
+    <p>Connecting to your bank…</p>
+  </body>
+</html>
