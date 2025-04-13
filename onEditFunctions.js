@@ -127,19 +127,21 @@ function onEdit(e) {
         const monthYr = editedSheet.getRange(2, 2).getValue();
         month = monthYr.split("-")[0];
         year = monthYr.split("-")[1];
+        getRealTransactions(month, year);
       }
 
       if (runningFromCurrentPage) {
         const sheetName = editedSheet.getName();
         month = sheetName.split("-")[0];
         year = sheetName.split("-")[1];
+        getRealTransactions(month, year, true);
       }
 
-      if (month && year) {
-        getRealTransactions(month, year);
-      } else {
-        getRealTransactions();
-      }
+      // if (month && year) {
+      //   getRealTransactions(month, year);
+      // } else {
+      //   getRealTransactions();
+      // }
 
       return;
     }

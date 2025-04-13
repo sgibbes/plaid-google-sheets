@@ -2,7 +2,8 @@
 
 function testOnEdit() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const fakeRange = sheet.getRange(1, 15); // Row 1, Column 15 (O1)
+  const fakeRange = sheet.getRange(4, 7); // Row 1, Column 15 (O1)
+  // const fakeRange = sheet.getRange(1, 2); // Row 1, Column 15 (O1)
 
   // Simulate the edit
   fakeRange.setValue("TRUE"); // Optional: mimic actual edit

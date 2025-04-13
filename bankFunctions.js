@@ -1,6 +1,7 @@
 /** @format */
 
-function getRealTransactions(userMonth = null, userYear = null) {
+function getRealTransactions(userMonth = null, userYear = null, append = false) {
+  Logger.log(append);
   const clientId = PropertiesService.getScriptProperties().getProperty("PLAID_CLIENT_ID");
   const secret = PropertiesService.getScriptProperties().getProperty("PLAID_SECRET");
   const accessToken = PropertiesService.getScriptProperties().getProperty("PLAID_ACCESS_TOKEN");
@@ -78,10 +79,10 @@ function getRealTransactions(userMonth = null, userYear = null) {
     transactions = transactions.concat(JSON.parse(paginatedRequest.getContentText()).transactions);
   }
   const txSorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
-  const txAdjusted = txSorted.map((x) => {
+  const txAdjusted = txSorted.map((tx) => {
     const adjustedAmount = tx.amount < 0 ? Math.abs(tx.amount) : -tx.amount;
 
-    return { ...x, amount: adjustedAmount };
+    return { ...tx, amount: adjustedAmount };
   });
 
   const newSheetName = `${month}-${year}`;
@@ -101,7 +102,7 @@ function getRealTransactions(userMonth = null, userYear = null) {
 
       sheet.clearContents();
       sheet.appendRow(["Date", "Transaction Description", "Transaction Amount"]);
-      txSorted.forEach((tx) => {
+      txAdjusted.forEach((tx) => {
         sheet.appendRow([tx.date, tx.name, tx.amount]);
       });
 
@@ -130,9 +131,11 @@ function getRealTransactions(userMonth = null, userYear = null) {
     const startRow = lastRowWithData.length + 2;
     Logger.log(lastRowWithData.length + 2);
 
-    Logger.log(parseInt(startRow), 1, txSorted.length, 3);
+    Logger.log(parseInt(startRow));
+    Logger.log(txAdjusted);
+    const values = txAdjusted.map((tx) => [tx.date, tx.name, tx.amount]);
 
-    spreadsheet.getRange(parseInt(startRow), 1, txSorted.length, 3).setValues(txSorted);
+    sheet.getRange(startRow, 1, values.length, 3).setValues(values); //row, col, numRows, num cols
   }
 }
 
