@@ -1,6 +1,8 @@
 /** @format */
 
 function getRealTransactions(userMonth = null, userYear = null) {
+  const clientId = PropertiesService.getScriptProperties().getProperty("PLAID_CLIENT_ID");
+  const secret = PropertiesService.getScriptProperties().getProperty("PLAID_SECRET");
   const accessToken = PropertiesService.getScriptProperties().getProperty("PLAID_ACCESS_TOKEN");
   if (!accessToken) {
     throw new Error("No access token found. Run launchPlaidLink() first.");
@@ -45,8 +47,8 @@ function getRealTransactions(userMonth = null, userYear = null) {
     method: "post",
     contentType: "application/json",
     payload: JSON.stringify({
-      client_id: x,
-      secret: x,
+      client_id: clientId,
+      secret: secret,
       access_token: accessToken,
       start_date: startDate,
       end_date: endDate,
@@ -62,8 +64,8 @@ function getRealTransactions(userMonth = null, userYear = null) {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify({
-        client_id: x,
-        secret: "x",
+        client_id: clientID,
+        secret: secret,
         access_token: accessToken,
         start_date: startDate,
         end_date: endDate,
@@ -75,17 +77,18 @@ function getRealTransactions(userMonth = null, userYear = null) {
 
     transactions = transactions.concat(JSON.parse(paginatedRequest.getContentText()).transactions);
   }
-  const txSorted = [...transactions];
-  txSorted.sort((a, b) => {
-    const aDate = new Date(a.date);
-    const bDate = new Date(b.date);
-    return bDate - aDate;
+  const txSorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const txAdjusted = txSorted.map((x) => {
+    const adjustedAmount = tx.amount < 0 ? Math.abs(tx.amount) : -tx.amount;
+
+    return { ...x, amount: adjustedAmount };
   });
+
   const newSheetName = `${month}-${year}`;
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const sheetToCheck = spreadsheet.getSheetByName(newSheetName);
 
-  if (sheetToCheck) {
+  if (sheetToCheck && !append) {
     const response = Browser.msgBox(
       `Sheet ${newSheetName} already exists. Overwrite sheet?`, // message
       Browser.Buttons.OK_CANCEL // button set
@@ -93,28 +96,44 @@ function getRealTransactions(userMonth = null, userYear = null) {
 
     if (response === "ok") {
       spreadsheet.deleteSheet(sheetToCheck);
+      const sheet = spreadsheet.insertSheet(); // Creates a sheet with a default name
+      sheet.setName(newSheetName); // names new sheet
+
+      sheet.clearContents();
+      sheet.appendRow(["Date", "Transaction Description", "Transaction Amount"]);
+      txSorted.forEach((tx) => {
+        sheet.appendRow([tx.date, tx.name, tx.amount]);
+      });
+
+      sheet.getRange(2, 6).setValue("Run Categories");
+      sheet.getRange(2, 7).insertCheckboxes();
+
+      sheet.getRange(3, 6).setValue("Create Summary Table");
+      sheet.getRange(3, 7).insertCheckboxes();
+
+      sheet.getRange(4, 6).setValue("Download Data Again");
+      sheet.getRange(4, 7).insertCheckboxes();
     } else {
       return;
     }
   }
-  const sheet = spreadsheet.insertSheet(); // Creates a sheet with a default name
-  sheet.setName(newSheetName); // names new sheet
 
-  sheet.clearContents();
-  sheet.appendRow(["Date", "Transaction Description", "Transaction Amount"]);
+  if (append) {
+    const thisSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const thisLastRow = thisSheet.getRange("A:D").getLastRow();
 
-  txSorted.forEach((tx) => {
-    sheet.appendRow([tx.date, tx.name, tx.amount]);
-  });
+    const lastRowWithData = thisSheet
+      .getRange(2, 4, thisLastRow)
+      .getValues()
+      ?.flat()
+      ?.filter((value) => value !== "");
+    const startRow = lastRowWithData.length + 2;
+    Logger.log(lastRowWithData.length + 2);
 
-  sheet.getRange(2, 6).setValue("Run Categories");
-  sheet.getRange(2, 7).insertCheckboxes();
+    Logger.log(parseInt(startRow), 1, txSorted.length, 3);
 
-  sheet.getRange(3, 6).setValue("Create Summary Table");
-  sheet.getRange(3, 7).insertCheckboxes();
-
-  sheet.getRange(4, 6).setValue("Download Data Again");
-  sheet.getRange(4, 7).insertCheckboxes();
+    spreadsheet.getRange(parseInt(startRow), 1, txSorted.length, 3).setValues(txSorted);
+  }
 }
 
 // list all the accounts linked
@@ -125,8 +144,8 @@ function getAccounts() {
     method: "post",
     contentType: "application/json",
     payload: JSON.stringify({
-      client_id: x,
-      secret: "x",
+      client_id: clientId,
+      secret: secret,
       access_token: accessToken,
     }),
   });
