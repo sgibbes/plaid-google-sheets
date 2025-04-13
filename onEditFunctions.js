@@ -18,12 +18,12 @@ function onEdit(e) {
     const editedCellLabelCol = editedCol - 1;
     const editedCellLabel = editedSheet.getRange(editedRow, editedCellLabelCol).getValue();
 
-    const CHECKBOX_COL = 8; // Column I
-    const CATEGORY_COL = 9; // Column J
-    const SUMMARY_START_ROW = 1; // Adjust as needed
-    const SUMMARY_END_ROW = 20; // Adjust as needed
-    const DATA_START_ROW = 2;
-    const CATEGORY_DATA_COL = 4; // Column G
+    const checkboxCol = 8; // Column I
+    const categoryCol = 9; // Column J
+    const summaryStartRow = 1; // Adjust as needed
+    const summaryEndRow = 20; // Adjust as needed
+    const dataStartRow = 2;
+    const categoryDataCol = 4; // Column G
     // the edited cell is the check box AND the value to the left is 'Run Categories'
     // CATEGORIZE
     if (
@@ -52,16 +52,16 @@ function onEdit(e) {
 
     // FILTER
     if (
-      range.getColumn() === CHECKBOX_COL &&
-      range.getRow() >= SUMMARY_START_ROW &&
-      range.getRow() <= SUMMARY_END_ROW &&
+      range.getColumn() === checkboxCol &&
+      range.getRow() >= summaryStartRow &&
+      range.getRow() <= summaryEndRow &&
       e.value === "TRUE"
     ) {
       // Gather selected categories
       const categories = [];
-      for (let row = SUMMARY_START_ROW; row <= SUMMARY_END_ROW; row++) {
-        const checked = sheet.getRange(row, CHECKBOX_COL).getValue();
-        const category = sheet.getRange(row, CATEGORY_COL).getValue();
+      for (let row = summaryStartRow; row <= summaryEndRow; row++) {
+        const checked = sheet.getRange(row, checkboxCol).getValue();
+        const category = sheet.getRange(row, categoryCol).getValue();
         if (checked && category) {
           categories.push(category);
         }
@@ -74,8 +74,8 @@ function onEdit(e) {
       // Only apply filter if there are checked categories
       if (categories.length > 0) {
         const lastRow = sheet.getLastRow();
-        const categoryColumn = CATEGORY_DATA_COL; // Column where categories are located
-        const dataRange = sheet.getRange(DATA_START_ROW, categoryColumn, lastRow - DATA_START_ROW + 1);
+        const categoryColumn = categoryDataCol; // Column where categories are located
+        const dataRange = sheet.getRange(dataStartRow, categoryColumn, lastRow - dataStartRow + 1);
         const values = dataRange.getValues(); // Get all the values in the category column
 
         // Loop through the values and hide rows that don't match the categories
@@ -84,25 +84,64 @@ function onEdit(e) {
           const cellValue = values[i][0]; // Get the category value from the cell
           if (!categories.includes(cellValue)) {
             // If it doesn't match any category
-            rowsToHide.push(i + DATA_START_ROW); // Add the row number to hide
+            rowsToHide.push(i + dataStartRow); // Add the row number to hide
           }
         }
 
         // Show all rows first before hiding the non-matching rows
-        sheet.showRows(DATA_START_ROW, lastRow - DATA_START_ROW + 1);
+        sheet.showRows(dataStartRow, lastRow - dataStartRow + 1);
 
         // Hide the rows that don't match the categories
         rowsToHide.forEach((row) => sheet.hideRows(row));
 
-        Logger.log("Rows filtered based on exact categories.");
         return;
       }
     }
 
     // CLEAR FILTER
     if (range.getColumn() === 15 && editedCell === "TRUE") {
+      // unhides the rows
       editedSheet.showRows(1, 100);
+      // set clear filter checkbox back to false
       editedSheet.getRange(1, 15).setValue("FALSE");
+      // set all category filters back to false
+      const numRows = sheet.getLastRow() + 1;
+      const checkboxRange = sheet.getRange(2, checkboxCol, numRows);
+      const checkboxValues = checkboxRange.getValues();
+      const updatedValues = checkboxValues.map((row) => [row[0] === true ? false : row[0]]);
+      checkboxRange.setValues(updatedValues);
+    }
+
+    // DOWNLOAD
+    const runningFromScriptPage = editedSheet.getName() === "runScript" && editedCell === "TRUE";
+    const runningFromCurrentPage =
+      range.getColumn() === 7 &&
+      range.getRow() === 4 &&
+      editedCell === "TRUE" &&
+      editedCellLabel === "Download Data Again";
+    if (runningFromScriptPage || runningFromCurrentPage) {
+      let month = null;
+      let year = null;
+      if (runningFromScriptPage) {
+        editedSheet.getRange(1, 2).setValue("FALSE");
+        const monthYr = editedSheet.getRange(2, 2).getValue();
+        month = monthYr.split("-")[0];
+        year = monthYr.split("-")[1];
+      }
+
+      if (runningFromCurrentPage) {
+        const sheetName = editedSheet.getName();
+        month = sheetName.split("-")[0];
+        year = sheetName.split("-")[1];
+      }
+
+      if (month && year) {
+        getRealTransactions(month, year);
+      } else {
+        getRealTransactions();
+      }
+
+      return;
     }
   } finally {
     lock.releaseLock();

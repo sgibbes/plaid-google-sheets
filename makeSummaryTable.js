@@ -43,7 +43,7 @@ function summarizeByCategory() {
   for (let i = 1; i < budgetData.length; i++) {
     const category = budgetData[i][0];
     const budgeted = budgetData[i][1];
-    budgetMap[category] = budgeted;
+    budgetMap[category.toLowerCase()] = budgeted;
   }
 
   const totalRowStart = 1; // leave one blank row after data
@@ -59,7 +59,7 @@ function summarizeByCategory() {
   let currentRow = totalRowStart + 1;
   for (const category in categoryTotals) {
     const total = categoryTotals[category];
-    const budgeted = budgetMap[category] || 0;
+    const budgeted = budgetMap[category.toLowerCase()] || 0;
     const variance = budgeted - total;
     // Insert checkbox in column H (col 8)
     const checkboxCell = sheet.getRange(currentRow, outputColStart);
