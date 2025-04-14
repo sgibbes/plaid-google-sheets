@@ -17,7 +17,6 @@ function categorizeTransactions() {
   const catNames = catData[0];
   const categories = {};
   catNames.forEach((cat) => {
-    console.log(catNames.indexOf(cat));
     const colNum = catNames.indexOf(cat) + 1;
     const lastRow = catSheet.getLastRow();
     catValues = catSheet
@@ -55,10 +54,21 @@ function categorizeTransactions() {
       }
     }
 
-    // Write category to the last column, only is value is blank
+    // Write category to the last column, only if value is blank
     const cell = sheet.getRange(i + 1, catColNum);
     if (cell.getValue() === "") {
       cell.setValue(category);
     }
+    const sortedCats = [...catNames].sort((a, b) => a - b);
+    // this creates a new validation rule which makes the cell a drop down?
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(
+        sortedCats.sort((a, b) => a - b), // sort alphabetically
+        true
+      )
+      .setAllowInvalid(false)
+      .build();
+
+    cell.setDataValidation(rule);
   }
 }
