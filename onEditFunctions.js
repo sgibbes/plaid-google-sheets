@@ -99,11 +99,11 @@ function onEdit(e) {
     }
 
     // CLEAR FILTER
-    if (range.getColumn() === 15 && editedCell === "TRUE") {
+    if (editedCol === 7 && editedRow === 1 && editedCell === "TRUE") {
       // unhides the rows
-      editedSheet.showRows(1, 100);
+      editedSheet.showRows(1, 1000);
       // set clear filter checkbox back to false
-      editedSheet.getRange(1, 15).setValue("FALSE");
+      editedSheet.getRange(1, 7).setValue("FALSE");
       // set all category filters back to false
       const numRows = sheet.getLastRow() + 1;
       const checkboxRange = sheet.getRange(2, checkboxCol, numRows);
@@ -131,17 +131,12 @@ function onEdit(e) {
       }
 
       if (runningFromCurrentPage) {
+        editedSheet.getRange(4, 7).setValue("FALSE");
         const sheetName = editedSheet.getName();
         month = sheetName.split("-")[0];
         year = sheetName.split("-")[1];
         getRealTransactions(month, year, true);
       }
-
-      // if (month && year) {
-      //   getRealTransactions(month, year);
-      // } else {
-      //   getRealTransactions();
-      // }
 
       return;
     }
