@@ -8,23 +8,36 @@ const categoryColIndex = headers.indexOf("Category");
 const outputColStart = categoryColIndex + 5; // 3 columns to the right of Category column
 
 function summarizeByCategory() {
+  // clear contents
+  const rangeToClear = sheet.getRange(1, outputColStart, 2000, 8);
+  rangeToClear.clear();
+
   const amountColIndex = headers.indexOf("Transaction Amount");
-  Logger.log(data);
-  // return
+
+  const catSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Categories");
+  const catData = catSheet.getDataRange().getValues(); // assuming this includes headers
+  const catNames = catData[0];
+
   if (categoryColIndex === -1 || amountColIndex === -1) {
     throw new Error('Missing required headers: "Category" or "Transaction Amount"');
   }
 
+  // set up category totals with all cat names
   const categoryTotals = {};
+  catNames.forEach((cat) => {
+    categoryTotals[cat] = 0;
+  });
 
   // Start at row 1 to skip headers
   for (let i = 1; i < data.length; i++) {
-    const category = data[i][categoryColIndex];
-    const amount = parseFloat(data[i][amountColIndex]);
+    // loop over all transactions
+    const category = data[i][categoryColIndex]; // get category of that transaction
+    const amount = parseFloat(data[i][amountColIndex]); // get amount of that transaction
 
     if (!isNaN(amount)) {
       if (!categoryTotals[category]) {
-        categoryTotals[category] = 0;
+        // if we don't have a category
+        categoryTotals[category] = 0; // assign total to 0
       }
       // make totals all positive numbers
       if (category.toLowerCase() != "income") {
@@ -70,6 +83,7 @@ function summarizeByCategory() {
     sheet.getRange(currentRow, outputColStart + 3).setValue(budgeted);
     const varianceCell = sheet.getRange(currentRow, outputColStart + 4);
     varianceCell.setValue(variance);
+
     if (variance < 0) {
       varianceCell.setFontColor("red");
     }
@@ -79,12 +93,6 @@ function summarizeByCategory() {
 
   // set formats to currency
   const numRows = Object.keys(categoryTotals).length;
-  const currencyRange = sheet.getRange(totalRowStart + 1, outputColStart + 1, numRows, 3); // Total, Budgeted, Variance
+  const currencyRange = sheet.getRange(totalRowStart + 1, outputColStart + 1, numRows, 4); // Start row#, col#, # of rows, # of cols
   currencyRange.setNumberFormat("$#,##0.00");
-
-  // add the unhide box at the end:
-  sheet.getRange("N1").setValue("Clear Filter");
-  // Set O1 as a checkbox
-  sheet.getRange("O1").insertCheckboxes(); // Adds the checkbox
-  sheet.getRange("O1").setValue(false); // Optional: uncheck it
 }
