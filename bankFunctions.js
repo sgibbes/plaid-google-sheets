@@ -106,6 +106,9 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
         sheet.appendRow([tx.date, tx.name, tx.amount]);
       });
 
+      sheet.getRange(1, 6).setValue("Clear Filter");
+      sheet.getRange(1, 7).insertCheckboxes();
+
       sheet.getRange(2, 6).setValue("Run Categories");
       sheet.getRange(2, 7).insertCheckboxes();
 
@@ -114,28 +117,17 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
 
       sheet.getRange(4, 6).setValue("Download Data Again");
       sheet.getRange(4, 7).insertCheckboxes();
+
+      sheet.autoResizeColumns(1, 10);
     } else {
       return;
     }
   }
 
   if (append) {
-    const thisSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const thisLastRow = thisSheet.getRange("A:D").getLastRow();
-
-    const lastRowWithData = thisSheet
-      .getRange(2, 4, thisLastRow)
-      .getValues()
-      ?.flat()
-      ?.filter((value) => value !== "");
-    const startRow = lastRowWithData.length + 2;
-    Logger.log(lastRowWithData.length + 2);
-
-    Logger.log(parseInt(startRow));
-    Logger.log(txAdjusted);
     const values = txAdjusted.map((tx) => [tx.date, tx.name, tx.amount]);
 
-    sheet.getRange(startRow, 1, values.length, 3).setValues(values); //row, col, numRows, num cols
+    sheet.getRange(2, 1, values.length, 3).setValues(values); //row, col, numRows, num cols
   }
 }
 
@@ -156,28 +148,4 @@ function getAccounts() {
   Logger.log(data.accounts);
 
   Logger.log(JSON.stringify(data.accounts, null, 2));
-}
-
-function overwriteJustNewData(transactions) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("01-2025");
-  // sheet.appendRow(['Date', 'Transaction Description', 'Transaction Amount']);
-  let currentRow = 2;
-
-  transactions.forEach((tx) => {
-    sheet.getRange(currentRow, 1).setValue(tx.date);
-    sheet.getRange(currentRow, 2).setValue(tx.name);
-    const adjustedAmount = tx.amount < 0 ? Math.abs(tx.amount) : -tx.amount;
-
-    sheet.getRange(currentRow, 3).setValue(adjustedAmount);
-    currentRow++;
-  });
-
-  sheet.getRange(2, 6).setValue("Run Categories");
-  sheet.getRange(2, 7).insertCheckboxes();
-
-  sheet.getRange(3, 6).setValue("Create Summary Table");
-  sheet.getRange(3, 7).insertCheckboxes();
-
-  sheet.getRange(4, 6).setValue("Download Data Again");
-  sheet.getRange(4, 7).insertCheckboxes();
 }
