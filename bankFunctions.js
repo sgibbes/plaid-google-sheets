@@ -115,8 +115,11 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
       sheet.getRange(3, 6).setValue("Create Summary Table");
       sheet.getRange(3, 7).insertCheckboxes();
 
-      sheet.getRange(4, 6).setValue("Download Data Again");
+      sheet.getRange(4, 6).setValue("Re-Download Data");
       sheet.getRange(4, 7).insertCheckboxes();
+
+      sheet.getRange(5, 6).setValue("Create Charts");
+      sheet.getRange(5, 7).insertCheckboxes();
 
       sheet.autoResizeColumns(1, 10);
     } else {

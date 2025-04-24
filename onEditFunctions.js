@@ -114,11 +114,7 @@ function onEdit(e) {
 
     // DOWNLOAD
     const runningFromScriptPage = editedSheet.getName() === "runScript" && editedCell === "TRUE";
-    const runningFromCurrentPage =
-      range.getColumn() === 7 &&
-      range.getRow() === 4 &&
-      editedCell === "TRUE" &&
-      editedCellLabel === "Download Data Again";
+    const runningFromCurrentPage = range.getColumn() === 7 && range.getRow() === 4 && editedCell === "TRUE";
     if (runningFromScriptPage || runningFromCurrentPage) {
       let month = null;
       let year = null;
@@ -139,6 +135,32 @@ function onEdit(e) {
       }
 
       return;
+    }
+
+    // CHART
+    if (editedCol === 7 && editedRow === 5 && editedCell === "TRUE") {
+      // remove existing charts
+      const charts = sheet.getCharts();
+      charts.forEach((chart) => sheet.removeChart(chart));
+
+      // clear contents
+      const rangeToClear = sheet.getRange(1, 15, 2000, 22);
+      rangeToClear.clear();
+
+      const categories = ["groceries", "discretionary", "tolls", "gas"];
+      let chartNum = 0;
+      // find row in summary table that contains 'groceries'
+      categories.forEach((x) => {
+        chartNum += 1;
+        const columnValues = sheet.getRange("I:I").getValues(); // All of column I
+        const index = columnValues.findIndex((row) => row[0].toString().toLowerCase() === x.toLowerCase()); // find row# in summary table
+        if (index != -1) {
+          const rowNum = index + 1;
+          createChart(rowNum, chartNum);
+        }
+      });
+
+      editedSheet.getRange(5, 7).setValue("FALSE");
     }
   } finally {
     lock.releaseLock();

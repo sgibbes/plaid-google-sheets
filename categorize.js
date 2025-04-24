@@ -43,8 +43,6 @@ function categorizeTransactions() {
   for (let i = 1; i < data.length; i++) {
     const description = data[i][descColNum].toLowerCase();
 
-    const amount = parseFloat(data[i][amountColumnIndex]) || 0;
-
     let category = "UNCATEGORIZED";
     for (const [key, keywords] of Object.entries(categories)) {
       Logger.log(keywords);
@@ -53,13 +51,13 @@ function categorizeTransactions() {
         break;
       }
     }
-
+    const sortedCats = [...catNames].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
     // Write category to the last column, only if value is blank
     const cell = sheet.getRange(i + 1, catColNum);
     if (cell.getValue() === "") {
       cell.setValue(category);
     }
-    const sortedCats = [...catNames].sort((a, b) => a - b);
+
     // this creates a new validation rule which makes the cell a drop down?
     const rule = SpreadsheetApp.newDataValidation()
       .requireValueInList(
