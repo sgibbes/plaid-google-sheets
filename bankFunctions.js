@@ -1,5 +1,32 @@
 /** @format */
 
+function createDataInSheet() {
+  const sheet = spreadsheet.insertSheet(); // Creates a sheet with a default name
+  sheet.setName(newSheetName); // names new sheet
+
+  sheet.clearContents();
+  sheet.appendRow(["Date", "Transaction Description", "Transaction Amount"]);
+  txAdjusted.forEach((tx) => {
+    sheet.appendRow([tx.date, tx.name, tx.amount]);
+  });
+
+  sheet.getRange(1, 6).setValue("Clear Filter");
+  sheet.getRange(1, 7).insertCheckboxes();
+
+  sheet.getRange(2, 6).setValue("Run Categories");
+  sheet.getRange(2, 7).insertCheckboxes();
+
+  sheet.getRange(3, 6).setValue("Create Summary Table");
+  sheet.getRange(3, 7).insertCheckboxes();
+
+  sheet.getRange(4, 6).setValue("Re-Download Data");
+  sheet.getRange(4, 7).insertCheckboxes();
+
+  sheet.getRange(5, 6).setValue("Create Charts");
+  sheet.getRange(5, 7).insertCheckboxes();
+
+  sheet.autoResizeColumns(1, 10);
+}
 function getRealTransactions(userMonth = null, userYear = null, append = false) {
   Logger.log(append);
   const clientId = PropertiesService.getScriptProperties().getProperty("PLAID_CLIENT_ID");
@@ -97,34 +124,12 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
 
     if (response === "ok") {
       spreadsheet.deleteSheet(sheetToCheck);
-      const sheet = spreadsheet.insertSheet(); // Creates a sheet with a default name
-      sheet.setName(newSheetName); // names new sheet
-
-      sheet.clearContents();
-      sheet.appendRow(["Date", "Transaction Description", "Transaction Amount"]);
-      txAdjusted.forEach((tx) => {
-        sheet.appendRow([tx.date, tx.name, tx.amount]);
-      });
-
-      sheet.getRange(1, 6).setValue("Clear Filter");
-      sheet.getRange(1, 7).insertCheckboxes();
-
-      sheet.getRange(2, 6).setValue("Run Categories");
-      sheet.getRange(2, 7).insertCheckboxes();
-
-      sheet.getRange(3, 6).setValue("Create Summary Table");
-      sheet.getRange(3, 7).insertCheckboxes();
-
-      sheet.getRange(4, 6).setValue("Re-Download Data");
-      sheet.getRange(4, 7).insertCheckboxes();
-
-      sheet.getRange(5, 6).setValue("Create Charts");
-      sheet.getRange(5, 7).insertCheckboxes();
-
-      sheet.autoResizeColumns(1, 10);
-    } else {
-      return;
+      createDataInSheet();
     }
+  } else if (!sheetToCheck) {
+    createDataInSheet();
+  } else {
+    return;
   }
 
   if (append) {
