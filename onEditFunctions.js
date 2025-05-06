@@ -4,6 +4,7 @@ function onEdit(e) {
   const lock = LockService.getScriptLock();
 
   if (!lock.tryLock(100)) {
+    Logger.log('Another instance is already running')
     // Another instance is already running
     return;
   }
@@ -121,6 +122,7 @@ function onEdit(e) {
       if (runningFromScriptPage) {
         editedSheet.getRange(1, 2).setValue("FALSE");
         const monthYr = editedSheet.getRange(2, 2).getValue();
+        Logger.log({monthYr})
         month = monthYr.split("-")[0];
         year = monthYr.split("-")[1];
         getRealTransactions(month, year);
