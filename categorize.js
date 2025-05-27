@@ -26,6 +26,7 @@ function categorizeTransactions() {
       ?.filter((value) => value !== "");
     categories[cat] = catValues;
   });
+
   // get column index from transaction amount
   const amountColumnIndex = data[0].indexOf("Transaction Amount");
   const catColNum = amntColNum + 2;
@@ -41,32 +42,50 @@ function categorizeTransactions() {
 
   // Categorize each transaction
   for (let i = 1; i < data.length; i++) {
-    const description = data[i][descColNum].toLowerCase();
-
-    let category = "UNCATEGORIZED";
-    for (const [key, keywords] of Object.entries(categories)) {
-      Logger.log(keywords);
-      if (keywords.some((keyword) => description.includes(keyword.toString().toLowerCase()))) {
-        category = key;
-        break;
-      }
-    }
-    const sortedCats = [...catNames].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-    // Write category to the last column, only if value is blank
     const cell = sheet.getRange(i + 1, catColNum);
+
     if (cell.getValue() === "") {
+      const description = data[i][descColNum].trim().toLowerCase();
+
+      // this is the default category. If no matches, its set to this
+      let category = "UNCATEGORIZED";
+      for (const [key, keywords] of Object.entries(categories)) {
+        // if any of the keywords are in the description, mark that the category
+        if (
+          keywords.some((keyword) => {
+            // keywords wrapped in double quotes need an exact match
+            const exactMatchWord = keyword.startsWith('"') && keyword.endsWith('"');
+            let matchCat = false;
+            if (exactMatchWord) {
+              const exact = keyword.slice(1, -1).toLowerCase();
+
+              matchCat = description === exact;
+            } else {
+              matchCat = description.includes(keyword.toLowerCase());
+            }
+
+            return matchCat;
+          })
+        ) {
+          category = key;
+          break;
+        }
+      }
       cell.setValue(category);
+
+      const sortedCats = [...catNames].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+      // Write category to the last column, only if value is blank
+
+      // this creates a new validation rule which makes the cell a drop down?
+      const rule = SpreadsheetApp.newDataValidation()
+        .requireValueInList(
+          sortedCats.sort((a, b) => a - b), // sort alphabetically
+          true
+        )
+        .setAllowInvalid(false)
+        .build();
+
+      cell.setDataValidation(rule);
     }
-
-    // this creates a new validation rule which makes the cell a drop down?
-    const rule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(
-        sortedCats.sort((a, b) => a - b), // sort alphabetically
-        true
-      )
-      .setAllowInvalid(false)
-      .build();
-
-    cell.setDataValidation(rule);
   }
 }
