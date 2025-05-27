@@ -65,9 +65,9 @@ function summarizeByCategory() {
   sheet.getRange(totalRowStart, outputColStart).setValue("Filter");
 
   sheet.getRange(totalRowStart, outputColStart + 1).setValue("Category Totals");
-  sheet.getRange(totalRowStart, outputColStart + 2).setValue("Total");
-  sheet.getRange(totalRowStart, outputColStart + 3).setValue("Budgeted");
-  sheet.getRange(totalRowStart, outputColStart + 4).setValue("Budgeted - Actual");
+  sheet.getRange(totalRowStart, outputColStart + 2).setValue("Budgeted");
+  sheet.getRange(totalRowStart, outputColStart + 3).setValue("Actual");
+  sheet.getRange(totalRowStart, outputColStart + 4).setValue("Remaining");
 
   let currentRow = totalRowStart + 1;
   for (const category in categoryTotals) {
@@ -79,8 +79,8 @@ function summarizeByCategory() {
     checkboxCell.insertCheckboxes();
     checkboxCell.setValue(false);
     sheet.getRange(currentRow, outputColStart + 1).setValue(category);
-    sheet.getRange(currentRow, outputColStart + 2).setValue(total);
-    sheet.getRange(currentRow, outputColStart + 3).setValue(budgeted);
+    sheet.getRange(currentRow, outputColStart + 3).setValue(total);
+    sheet.getRange(currentRow, outputColStart + 2).setValue(budgeted);
     const varianceCell = sheet.getRange(currentRow, outputColStart + 4);
     varianceCell.setValue(variance);
 
