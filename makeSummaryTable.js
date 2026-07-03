@@ -1,13 +1,14 @@
 /** @format */
 
-const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-const data = sheet.getDataRange().getValues(); // includes headers
-
-const headers = data[0];
-const categoryColIndex = headers.indexOf("Category");
-const outputColStart = categoryColIndex + 5; // 3 columns to the right of Category column
-
 function summarizeByCategory() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  ensureTransactionLayout_(sheet);
+
+  const data = sheet.getDataRange().getValues(); // includes headers
+  const headers = data[0];
+  const categoryColIndex = headers.indexOf("Category");
+  const outputColStart = categoryColIndex + 6; // leaves room for Notes after Category
+
   // clear contents
   const rangeToClear = sheet.getRange(1, outputColStart, 2000, 8);
   rangeToClear.clear();

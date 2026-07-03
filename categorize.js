@@ -30,6 +30,7 @@ function categorizeTransactions() {
   // get column index from transaction amount
   const amountColumnIndex = data[0].indexOf("Transaction Amount");
   const existingCategoryColIndex = data[0].indexOf("Category");
+  const existingNotesColIndex = data[0].indexOf("Notes");
   const accountColIndex = data[0].indexOf("Account");
   const catColNum =
     existingCategoryColIndex !== -1 ? existingCategoryColIndex + 1 : accountColIndex !== -1 ? accountColIndex + 2 : amntColNum + 2;
@@ -38,6 +39,12 @@ function categorizeTransactions() {
   if (existingCategoryColIndex === -1) {
     sheet.getRange(1, catColNum).setValue("Category");
   }
+
+  if (existingNotesColIndex === -1) {
+    sheet.insertColumnAfter(catColNum);
+    sheet.getRange(1, catColNum + 1).setValue("Notes");
+  }
+
   // Add a 'Amount' column check (assuming amounts are already in the data)
   if (amountColumnIndex === -1) {
     SpreadsheetApp.getUi().alert("No 'Amount' column found. Please add one.");

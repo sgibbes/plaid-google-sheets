@@ -1,5 +1,13 @@
 /** @format */
 
+function resetCommandCheckbox_(sheet, row, label, fallbackCol) {
+  const rowValues = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const labelCol = rowValues.indexOf(label) + 1;
+  const checkboxCol = labelCol ? labelCol + 1 : fallbackCol;
+
+  sheet.getRange(row, checkboxCol).setValue("FALSE");
+}
+
 function onEdit(e) {
   const lock = LockService.getScriptLock();
 
@@ -29,7 +37,6 @@ function onEdit(e) {
     // the edited cell is the check box AND the value to the left is 'Run Categories'
     // CATEGORIZE
     if (
-      range.getColumn() === 7 &&
       range.getRow() === 2 &&
       editedCell === "TRUE" &&
       editedCellLabel === "Run Categories"
@@ -37,19 +44,18 @@ function onEdit(e) {
       SpreadsheetApp.getActiveSpreadsheet().toast("Categorizing Transactions");
 
       categorizeTransactions();
-      editedSheet.getRange(2, 7).setValue("FALSE");
+      resetCommandCheckbox_(editedSheet, 2, "Run Categories", editedCol);
     }
 
     // SUMMARIZE
     if (
-      range.getColumn() === 7 &&
       range.getRow() === 3 &&
       editedCell === "TRUE" &&
       editedCellLabel === "Create Summary Table"
     ) {
       SpreadsheetApp.getActiveSpreadsheet().toast("creating summary table");
       summarizeByCategory();
-      editedSheet.getRange(3, 7).setValue("FALSE");
+      resetCommandCheckbox_(editedSheet, 3, "Create Summary Table", editedCol);
     }
 
     // FILTER
@@ -101,11 +107,11 @@ function onEdit(e) {
     }
 
     // CLEAR FILTER
-    if (editedCol === 7 && editedRow === 1 && editedCell === "TRUE") {
+    if (editedRow === 1 && editedCell === "TRUE" && editedCellLabel === "Clear Filter") {
       // unhides the rows
       editedSheet.showRows(1, 1000);
       // set clear filter checkbox back to false
-      editedSheet.getRange(1, 7).setValue("FALSE");
+      resetCommandCheckbox_(editedSheet, 1, "Clear Filter", editedCol);
       // set all category filters back to false
       const numRows = editedSheet.getLastRow() + 1;
       const checkboxRange = editedSheet.getRange(2, checkboxCol, numRows);
@@ -116,7 +122,7 @@ function onEdit(e) {
 
     // DOWNLOAD
     const runningFromScriptPage = editedSheet.getName() === "runScript" && editedCell === "TRUE";
-    const runningFromCurrentPage = range.getColumn() === 7 && range.getRow() === 4 && editedCell === "TRUE";
+    const runningFromCurrentPage = range.getRow() === 4 && editedCell === "TRUE" && editedCellLabel === "Re-Download Data";
     if (runningFromScriptPage || runningFromCurrentPage) {
       let month = null;
       let year = null;
@@ -130,7 +136,7 @@ function onEdit(e) {
       }
 
       if (runningFromCurrentPage) {
-        editedSheet.getRange(4, 7).setValue("FALSE");
+        resetCommandCheckbox_(editedSheet, 4, "Re-Download Data", editedCol);
         const sheetName = editedSheet.getName();
         month = sheetName.split("-")[0];
         year = sheetName.split("-")[1];
@@ -141,13 +147,14 @@ function onEdit(e) {
     }
 
     // CHART
-    if (editedCol === 7 && editedRow === 5 && editedCell === "TRUE") {
+    if (editedRow === 5 && editedCell === "TRUE" && editedCellLabel === "Create Charts") {
       // remove existing charts
       const charts = editedSheet.getCharts();
       charts.forEach((chart) => editedSheet.removeChart(chart));
 
       // clear contents
-      const rangeToClear = editedSheet.getRange(1, 15, 2000, 22);
+      const remainingSummaryCol = headerRow.indexOf("Remaining") + 1 || 15;
+      const rangeToClear = editedSheet.getRange(1, remainingSummaryCol + 2, 2000, 22);
       rangeToClear.clear();
 
       const categories = ["groceries", "discretionary", "tolls", "gas"];
@@ -163,7 +170,7 @@ function onEdit(e) {
         }
       });
 
-      editedSheet.getRange(5, 7).setValue("FALSE");
+      resetCommandCheckbox_(editedSheet, 5, "Create Charts", editedCol);
     }
   } finally {
     lock.releaseLock();

@@ -1,31 +1,116 @@
 /** @format */
+const TRANSACTION_HEADERS = ["Date", "Transaction Description", "Transaction Amount", "Account", "Category", "Notes"];
+const CONTROL_LABEL_COL = 7;
+const CONTROL_CHECKBOX_COL = 8;
+
 function createDataInSheet(newSheetName, txAdjusted) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = spreadsheet.insertSheet(); // Creates a sheet with a default name
   sheet.setName(newSheetName); // names new sheet
 
   sheet.clearContents();
-  sheet.appendRow(["Date", "Transaction Description", "Transaction Amount", "Account"]);
+  sheet.appendRow(TRANSACTION_HEADERS);
   txAdjusted.forEach((tx) => {
-    sheet.appendRow([tx.date, tx.name, tx.amount, tx.accountName]);
+    sheet.appendRow(getTransactionRow_(tx, {}));
   });
 
-  sheet.getRange(1, 6).setValue("Clear Filter");
-  sheet.getRange(1, 7).insertCheckboxes();
+  sheet.getRange(1, CONTROL_LABEL_COL).setValue("Clear Filter");
+  sheet.getRange(1, CONTROL_CHECKBOX_COL).insertCheckboxes();
 
-  sheet.getRange(2, 6).setValue("Run Categories");
-  sheet.getRange(2, 7).insertCheckboxes();
+  sheet.getRange(2, CONTROL_LABEL_COL).setValue("Run Categories");
+  sheet.getRange(2, CONTROL_CHECKBOX_COL).insertCheckboxes();
 
-  sheet.getRange(3, 6).setValue("Create Summary Table");
-  sheet.getRange(3, 7).insertCheckboxes();
+  sheet.getRange(3, CONTROL_LABEL_COL).setValue("Create Summary Table");
+  sheet.getRange(3, CONTROL_CHECKBOX_COL).insertCheckboxes();
 
-  sheet.getRange(4, 6).setValue("Re-Download Data");
-  sheet.getRange(4, 7).insertCheckboxes();
+  sheet.getRange(4, CONTROL_LABEL_COL).setValue("Re-Download Data");
+  sheet.getRange(4, CONTROL_CHECKBOX_COL).insertCheckboxes();
 
-  sheet.getRange(5, 6).setValue("Create Charts");
-  sheet.getRange(5, 7).insertCheckboxes();
+  sheet.getRange(5, CONTROL_LABEL_COL).setValue("Create Charts");
+  sheet.getRange(5, CONTROL_CHECKBOX_COL).insertCheckboxes();
 
   sheet.autoResizeColumns(1, 10);
+}
+
+function getTransactionRow_(tx, existingNotes) {
+  const key = getTransactionNoteKey_({
+    date: tx.date,
+    name: tx.name,
+    amount: tx.amount,
+    accountName: tx.accountName,
+  });
+
+  return [tx.date, tx.name, tx.amount, tx.accountName, "", existingNotes[key] || ""];
+}
+
+function getTransactionNoteKey_(tx) {
+  return [
+    getTransactionNoteKeyValue_(tx.date, true),
+    getTransactionNoteKeyValue_(tx.name),
+    getTransactionNoteKeyValue_(tx.amount),
+    getTransactionNoteKeyValue_(tx.accountName),
+  ].join("|");
+}
+
+function getTransactionNoteKeyValue_(value, isDate) {
+  if (isDate && value instanceof Date) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+
+  return String(value || "").trim();
+}
+
+function getExistingNotes_(sheet) {
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) {
+    return {};
+  }
+
+  const headers = data[0];
+  const dateCol = headers.indexOf("Date");
+  const descriptionCol = headers.indexOf("Transaction Description");
+  const amountCol = headers.indexOf("Transaction Amount");
+  const accountCol = headers.indexOf("Account");
+  const notesCol = headers.indexOf("Notes");
+
+  if ([dateCol, descriptionCol, amountCol, accountCol, notesCol].some((col) => col === -1)) {
+    return {};
+  }
+
+  return data.slice(1).reduce((notes, row) => {
+    const note = row[notesCol];
+    if (!note) {
+      return notes;
+    }
+
+    const key = getTransactionNoteKey_({
+      date: row[dateCol],
+      name: row[descriptionCol],
+      amount: row[amountCol],
+      accountName: row[accountCol],
+    });
+    notes[key] = note;
+    return notes;
+  }, {});
+}
+
+function ensureTransactionLayout_(sheet) {
+  let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  let accountCol = headers.indexOf("Account") + 1;
+  let categoryCol = headers.indexOf("Category") + 1;
+  let notesCol = headers.indexOf("Notes") + 1;
+
+  if (!categoryCol) {
+    categoryCol = accountCol ? accountCol + 1 : 5;
+    sheet.getRange(1, categoryCol).setValue("Category");
+    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    notesCol = headers.indexOf("Notes") + 1;
+  }
+
+  if (!notesCol) {
+    sheet.insertColumnAfter(categoryCol);
+    sheet.getRange(1, categoryCol + 1).setValue("Notes");
+  }
 }
 
 function getAccountDisplayName_(account) {
@@ -191,35 +276,40 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
     sheet.setName(newSheetName); // names new sheet
 
     sheet.clearContents();
-    sheet.appendRow(["Date", "Transaction Description", "Transaction Amount", "Account"]);
+    sheet.appendRow(TRANSACTION_HEADERS);
     txAdjusted.forEach((tx) => {
-      sheet.appendRow([tx.date, tx.name, tx.amount, tx.accountName]);
+      sheet.appendRow(getTransactionRow_(tx, {}));
     });
 
-    sheet.getRange(1, 6).setValue("Clear Filter");
-    sheet.getRange(1, 7).insertCheckboxes();
+    sheet.getRange(1, CONTROL_LABEL_COL).setValue("Clear Filter");
+    sheet.getRange(1, CONTROL_CHECKBOX_COL).insertCheckboxes();
 
-    sheet.getRange(2, 6).setValue("Run Categories");
-    sheet.getRange(2, 7).insertCheckboxes();
+    sheet.getRange(2, CONTROL_LABEL_COL).setValue("Run Categories");
+    sheet.getRange(2, CONTROL_CHECKBOX_COL).insertCheckboxes();
 
-    sheet.getRange(3, 6).setValue("Create Summary Table");
-    sheet.getRange(3, 7).insertCheckboxes();
+    sheet.getRange(3, CONTROL_LABEL_COL).setValue("Create Summary Table");
+    sheet.getRange(3, CONTROL_CHECKBOX_COL).insertCheckboxes();
 
-    sheet.getRange(4, 6).setValue("Re-Download Data");
-    sheet.getRange(4, 7).insertCheckboxes();
+    sheet.getRange(4, CONTROL_LABEL_COL).setValue("Re-Download Data");
+    sheet.getRange(4, CONTROL_CHECKBOX_COL).insertCheckboxes();
+
+    sheet.getRange(5, CONTROL_LABEL_COL).setValue("Create Charts");
+    sheet.getRange(5, CONTROL_CHECKBOX_COL).insertCheckboxes();
 
     sheet.autoResizeColumns(1, 10);
   }
 
   if (append) {
     const sheet = sheetToCheck || spreadsheet.getActiveSheet();
-    const values = txAdjusted.map((tx) => [tx.date, tx.name, tx.amount, tx.accountName]);
+    ensureTransactionLayout_(sheet);
+    const existingNotes = getExistingNotes_(sheet);
+    const values = txAdjusted.map((tx) => getTransactionRow_(tx, existingNotes));
 
-    sheet.getRange(1, 1, 1, 4).setValues([["Date", "Transaction Description", "Transaction Amount", "Account"]]);
-    sheet.getRange(2, 1, sheet.getMaxRows() - 1, 4).clearContent();
+    sheet.getRange(1, 1, 1, TRANSACTION_HEADERS.length).setValues([TRANSACTION_HEADERS]);
+    sheet.getRange(2, 1, sheet.getMaxRows() - 1, TRANSACTION_HEADERS.length).clearContent();
 
     if (values.length > 0) {
-      sheet.getRange(2, 1, values.length, 4).setValues(values); //row, col, numRows, num cols
+      sheet.getRange(2, 1, values.length, TRANSACTION_HEADERS.length).setValues(values); //row, col, numRows, num cols
     }
   }
 }

@@ -17,8 +17,8 @@ function createChart(row, chartNum) {
   const rowStart = chartNum * 3 - 2;
 
   const rowEnd = chartNum * 3;
-  const startCol = 15 + (chartNum - 1) * 2;
-  Logger.log(`row start: ${rowStart}, col: ${15}, num rows: ${2}, num cols: ${2}`);
+  const startCol = remainingCol + 2 + (chartNum - 1) * 2;
+  Logger.log(`row start: ${rowStart}, col: ${startCol}, num rows: ${2}, num cols: ${2}`);
   const hiddenDataRange = sheet.getRange(1, startCol, 2, 2);
   hiddenDataRange.clearContent();
   hiddenDataRange.setValues([
@@ -51,7 +51,7 @@ function createChart(row, chartNum) {
     .setOption("colors", ["#b32222", "#22b322"]) //spent, remaining
     .setOption("width", 100)
     .setOption("height", 100)
-    .setPosition(chartRow, 13, 0, 0)
+    .setPosition(chartRow, remainingCol, 0, 0)
     .setOption("legend", { position: "none" }) // hide callouts
 
     .build();
