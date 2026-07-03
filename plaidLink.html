@@ -2,29 +2,98 @@
 <html>
   <head>
     <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
-    <script>
-      function initPlaidLink(link_token) {
-        const handler = Plaid.create({
-          token: link_token,
-          onSuccess: function(public_token, metadata) {
-            google.script.run.withSuccessHandler(() => {
-              google.script.host.close();
-            }).handlePublicToken(public_token);
-          },
-          onExit: function(err, metadata) {
-            console.error('User exited Plaid Link:', err);
-          }
-        });
-
-        handler.open();
+    <style>
+      body {
+        color: #202124;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        margin: 24px;
       }
 
-      google.script.run
-        .withSuccessHandler(initPlaidLink)
-        .createLinkToken();
+      button {
+        background: #0a66c2;
+        border: 0;
+        border-radius: 4px;
+        color: #fff;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 10px 14px;
+      }
+
+      button:disabled {
+        background: #9aa0a6;
+        cursor: default;
+      }
+
+      .error {
+        color: #b3261e;
+        white-space: pre-wrap;
+      }
+    </style>
+    <script>
+      let plaidHandler = null;
+
+      function setStatus(message, isError) {
+        const status = document.getElementById('status');
+        status.textContent = message;
+        status.className = isError ? 'error' : '';
+      }
+
+      function openPlaidLink() {
+        if (!plaidHandler) {
+          return;
+        }
+
+        plaidHandler.open();
+      }
+
+      function initPlaidLink(link_token) {
+        if (!window.Plaid) {
+          setStatus('Plaid Link failed to load. Close this dialog and try again.', true);
+          return;
+        }
+
+        plaidHandler = Plaid.create({
+          token: link_token,
+          onLoad: function() {
+            document.getElementById('openPlaid').disabled = false;
+            setStatus('Opening Plaid Link...');
+            openPlaidLink();
+          },
+          onSuccess: function(public_token, metadata) {
+            setStatus('Saving bank connection...');
+            google.script.run
+              .withSuccessHandler(() => {
+                google.script.host.close();
+              })
+              .withFailureHandler(function(error) {
+                setStatus(error.message || String(error), true);
+              })
+              .handlePublicToken(public_token);
+          },
+          onExit: function(err, metadata) {
+            if (err) {
+              setStatus(err.display_message || err.error_message || JSON.stringify(err), true);
+              return;
+            }
+
+            setStatus('Plaid Link was closed before connecting.');
+          }
+        });
+      }
+
+      window.addEventListener('load', function() {
+        google.script.run
+          .withSuccessHandler(initPlaidLink)
+          .withFailureHandler(function(error) {
+            setStatus(error.message || String(error), true);
+          })
+          .createLinkToken();
+      });
     </script>
   </head>
   <body>
-    <p>Connecting to your bank…</p>
+    <p id="status">Connecting to your bank...</p>
+    <button id="openPlaid" type="button" onclick="openPlaidLink()" disabled>Open Plaid</button>
   </body>
 </html>

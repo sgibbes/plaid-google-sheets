@@ -5,9 +5,9 @@ function createDataInSheet(newSheetName, txAdjusted) {
   sheet.setName(newSheetName); // names new sheet
 
   sheet.clearContents();
-  sheet.appendRow(["Date", "Transaction Description", "Transaction Amount"]);
+  sheet.appendRow(["Date", "Transaction Description", "Transaction Amount", "Account"]);
   txAdjusted.forEach((tx) => {
-    sheet.appendRow([tx.date, tx.name, tx.amount]);
+    sheet.appendRow([tx.date, tx.name, tx.amount, tx.accountName]);
   });
 
   sheet.getRange(1, 6).setValue("Clear Filter");
@@ -27,12 +27,81 @@ function createDataInSheet(newSheetName, txAdjusted) {
 
   sheet.autoResizeColumns(1, 10);
 }
+
+function getAccountDisplayName_(account) {
+  const name = account.official_name || account.name || account.subtype || account.account_id;
+
+  return account.mask ? `${name} (${account.mask})` : name;
+}
+
+function getAccountLookupForAccessToken_(accessToken) {
+  const { clientId, secret } = getPlaidCredentials_();
+  const response = UrlFetchApp.fetch("https://production.plaid.com/accounts/get", {
+    method: "post",
+    contentType: "application/json",
+    muteHttpExceptions: true,
+    payload: JSON.stringify({
+      client_id: clientId,
+      secret: secret,
+      access_token: accessToken,
+    }),
+  });
+
+  const data = JSON.parse(response.getContentText());
+  if (response.getResponseCode() >= 400 || !data.accounts) {
+    throw new Error("Plaid accounts/get failed: " + response.getContentText());
+  }
+
+  return data.accounts.reduce((lookup, account) => {
+    lookup[account.account_id] = getAccountDisplayName_(account);
+    return lookup;
+  }, {});
+}
+
+function getTransactionsForAccessToken_(accessToken, startDate, endDate) {
+  const { clientId, secret } = getPlaidCredentials_();
+  const accountLookup = getAccountLookupForAccessToken_(accessToken);
+  const transactions = [];
+  let totalTransactions = null;
+
+  while (totalTransactions === null || transactions.length < totalTransactions) {
+    const response = UrlFetchApp.fetch("https://production.plaid.com/transactions/get", {
+      method: "post",
+      contentType: "application/json",
+      muteHttpExceptions: true,
+      payload: JSON.stringify({
+        client_id: clientId,
+        secret: secret,
+        access_token: accessToken,
+        start_date: startDate,
+        end_date: endDate,
+        options: {
+          offset: transactions.length,
+        },
+      }),
+    });
+
+    const data = JSON.parse(response.getContentText());
+    if (response.getResponseCode() >= 400 || !data.transactions) {
+      throw new Error("Plaid transactions/get failed: " + response.getContentText());
+    }
+
+    transactions.push(
+      ...data.transactions.map((transaction) => ({
+        ...transaction,
+        accountName: accountLookup[transaction.account_id] || transaction.account_id || "",
+      }))
+    );
+    totalTransactions = data.total_transactions;
+  }
+
+  return transactions;
+}
+
 function getRealTransactions(userMonth = null, userYear = null, append = false) {
   Logger.log(append);
-  const clientId = PropertiesService.getScriptProperties().getProperty("PLAID_CLIENT_ID");
-  const secret = PropertiesService.getScriptProperties().getProperty("PLAID_SECRET");
-  const accessToken = PropertiesService.getScriptProperties().getProperty("PLAID_ACCESS_TOKEN");
-  if (!accessToken) {
+  const accessTokens = getPlaidAccessTokens_();
+  if (accessTokens.length === 0) {
     throw new Error("No access token found. Run launchPlaidLink() first.");
   }
 
@@ -71,41 +140,18 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
     endDate = `${year}-${month}-${getEndDayNum(year, month)}`;
   }
 
-  const response = UrlFetchApp.fetch("https://production.plaid.com/transactions/get", {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify({
-      client_id: clientId,
-      secret: secret,
-      access_token: accessToken,
-      start_date: startDate,
-      end_date: endDate,
-    }),
+  const transactions = accessTokens.flatMap((accessToken) => getTransactionsForAccessToken_(accessToken, startDate, endDate));
+  const txSorted = [...transactions].sort((a, b) => {
+    const dateA = new Date(a.datetime || a.date);
+    const dateB = new Date(b.datetime || b.date);
+
+    if (dateA.getTime() !== dateB.getTime()) {
+      return dateA - dateB;
+    }
+
+    return (a.transaction_id || "").localeCompare(b.transaction_id || "");
   });
-
-  let transactions = JSON.parse(response.getContentText()).transactions;
-
-  const total_transactions = JSON.parse(response.getContentText()).total_transactions;
-
-  while (transactions.length < total_transactions) {
-    const paginatedRequest = UrlFetchApp.fetch("https://production.plaid.com/transactions/get", {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify({
-        client_id: clientID,
-        secret: secret,
-        access_token: accessToken,
-        start_date: startDate,
-        end_date: endDate,
-        options: {
-          offset: transactions.length,
-        },
-      }),
-    });
-
-    transactions = transactions.concat(JSON.parse(paginatedRequest.getContentText()).transactions);
-  }
-  const txSorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+  Logger.log(txSorted.filter((x) => x.pending));
   const txAdjusted = txSorted.map((tx) => {
     const adjustedAmount = tx.amount < 0 ? Math.abs(tx.amount) : -tx.amount;
 
@@ -145,9 +191,9 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
     sheet.setName(newSheetName); // names new sheet
 
     sheet.clearContents();
-    sheet.appendRow(["Date", "Transaction Description", "Transaction Amount"]);
+    sheet.appendRow(["Date", "Transaction Description", "Transaction Amount", "Account"]);
     txAdjusted.forEach((tx) => {
-      sheet.appendRow([tx.date, tx.name, tx.amount]);
+      sheet.appendRow([tx.date, tx.name, tx.amount, tx.accountName]);
     });
 
     sheet.getRange(1, 6).setValue("Clear Filter");
@@ -166,27 +212,40 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
   }
 
   if (append) {
-    const values = txAdjusted.map((tx) => [tx.date, tx.name, tx.amount]);
+    const sheet = sheetToCheck || spreadsheet.getActiveSheet();
+    const values = txAdjusted.map((tx) => [tx.date, tx.name, tx.amount, tx.accountName]);
 
-    sheet.getRange(2, 1, values.length, 3).setValues(values); //row, col, numRows, num cols
+    sheet.getRange(1, 1, 1, 4).setValues([["Date", "Transaction Description", "Transaction Amount", "Account"]]);
+    sheet.getRange(2, 1, sheet.getMaxRows() - 1, 4).clearContent();
+
+    if (values.length > 0) {
+      sheet.getRange(2, 1, values.length, 4).setValues(values); //row, col, numRows, num cols
+    }
   }
 }
 
 // list all the accounts linked
 function getAccounts() {
-  const accessToken = PropertiesService.getScriptProperties().getProperty("PLAID_ACCESS_TOKEN");
+  const { clientId, secret } = getPlaidCredentials_();
+  const accessTokens = getPlaidAccessTokens_();
 
-  const response = UrlFetchApp.fetch("https://production.plaid.com/accounts/get", {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify({
-      client_id: clientId,
-      secret: secret,
-      access_token: accessToken,
-    }),
+  if (accessTokens.length === 0) {
+    throw new Error("No access token found. Run launchPlaidLink() first.");
+  }
+
+  accessTokens.forEach((accessToken) => {
+    const response = UrlFetchApp.fetch("https://production.plaid.com/accounts/get", {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify({
+        client_id: clientId,
+        secret: secret,
+        access_token: accessToken,
+      }),
+    });
+    const data = JSON.parse(response.getContentText());
+    Logger.log(data.accounts);
+
+    Logger.log(JSON.stringify(data.accounts, null, 2));
   });
-  const data = JSON.parse(response.getContentText());
-  Logger.log(data.accounts);
-
-  Logger.log(JSON.stringify(data.accounts, null, 2));
 }

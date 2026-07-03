@@ -29,10 +29,14 @@ function categorizeTransactions() {
 
   // get column index from transaction amount
   const amountColumnIndex = data[0].indexOf("Transaction Amount");
-  const catColNum = amntColNum + 2;
+  const existingCategoryColIndex = data[0].indexOf("Category");
+  const accountColIndex = data[0].indexOf("Account");
+  const catColNum =
+    existingCategoryColIndex !== -1 ? existingCategoryColIndex + 1 : accountColIndex !== -1 ? accountColIndex + 2 : amntColNum + 2;
+
   // Add a 'Category' header if not present
-  if (data[0].indexOf("Category") === -1) {
-    sheet.getRange(1, amntColNum + 2).setValue("Category");
+  if (existingCategoryColIndex === -1) {
+    sheet.getRange(1, catColNum).setValue("Category");
   }
   // Add a 'Amount' column check (assuming amounts are already in the data)
   if (amountColumnIndex === -1) {

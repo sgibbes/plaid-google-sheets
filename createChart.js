@@ -2,9 +2,18 @@
 
 function createChart(row, chartNum) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const cat = sheet.getRange(row, 9).getValue();
-  const spent = sheet.getRange(row, 10).getValue();
-  const remaining = sheet.getRange(row, 12).getValue();
+  const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const categoryCol = headerRow.indexOf("Category Totals") + 1;
+  const actualCol = headerRow.indexOf("Actual") + 1;
+  const remainingCol = headerRow.indexOf("Remaining") + 1;
+
+  if (!categoryCol || !actualCol || !remainingCol) {
+    throw new Error('Missing required summary headers: "Category Totals", "Actual", or "Remaining"');
+  }
+
+  const cat = sheet.getRange(row, categoryCol).getValue();
+  const spent = sheet.getRange(row, actualCol).getValue();
+  const remaining = sheet.getRange(row, remainingCol).getValue();
   const rowStart = chartNum * 3 - 2;
 
   const rowEnd = chartNum * 3;
