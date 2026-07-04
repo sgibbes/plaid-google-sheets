@@ -16,5 +16,5 @@ function testOnEdit() {
     authMode: ScriptApp.AuthMode.FULL,
   };
 
-  onEdit(fakeEvent);
+  handleEdit_(fakeEvent);
 }

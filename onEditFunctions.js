@@ -9,6 +9,46 @@ function resetCommandCheckbox_(sheet, row, label, fallbackCol) {
 }
 
 function onEdit(e) {
+  if (shouldUseInstallableEditTrigger_(e)) {
+    SpreadsheetApp.getActiveSpreadsheet().toast("Use installOnEditTrigger() once so downloads can run from sheet edits.");
+    return;
+  }
+
+  handleEdit_(e);
+}
+
+function installedOnEdit(e) {
+  handleEdit_(e);
+}
+
+function installOnEditTrigger() {
+  const spreadsheet = SpreadsheetApp.getActive();
+  const triggers = ScriptApp.getProjectTriggers();
+
+  triggers.forEach((trigger) => {
+    if (trigger.getHandlerFunction() === "installedOnEdit") {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  ScriptApp.newTrigger("installedOnEdit").forSpreadsheet(spreadsheet).onEdit().create();
+  SpreadsheetApp.getActiveSpreadsheet().toast("Installable edit trigger is ready.");
+}
+
+function shouldUseInstallableEditTrigger_(e) {
+  if (!e || !e.range || e.value !== "TRUE") {
+    return false;
+  }
+
+  const sheet = e.range.getSheet();
+  const row = e.range.getRow();
+  const col = e.range.getColumn();
+  const label = col > 1 ? sheet.getRange(row, col - 1).getValue() : "";
+
+  return sheet.getName() === "runScript" || label === "Re-Download Data";
+}
+
+function handleEdit_(e) {
   const lock = LockService.getScriptLock();
 
   if (!lock.tryLock(100)) {
