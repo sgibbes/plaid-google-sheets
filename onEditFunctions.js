@@ -10,7 +10,6 @@ function resetCommandCheckbox_(sheet, row, label, fallbackCol) {
 
 function onEdit(e) {
   if (shouldUseInstallableEditTrigger_(e)) {
-    SpreadsheetApp.getActiveSpreadsheet().toast("Use installOnEditTrigger() once so downloads can run from sheet edits.");
     return;
   }
 
