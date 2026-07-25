@@ -43,6 +43,13 @@ function getTransactionRow_(tx, existingNotes) {
   return [tx.date, tx.name, tx.amount, tx.accountName, "", existingNotes[key] || ""];
 }
 
+function shouldExcludeTransaction_(tx) {
+  const description = String(tx.name || "").trim().toLowerCase();
+  const amountInCents = Math.round(Number(tx.amount) * 100);
+
+  return description === "best buy" && amountInCents === -121794;
+}
+
 function getTransactionNoteKey_(tx) {
   return [
     getTransactionNoteKeyValue_(tx.date, true),
@@ -237,11 +244,13 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
     return (a.transaction_id || "").localeCompare(b.transaction_id || "");
   });
   Logger.log(txSorted.filter((x) => x.pending));
-  const txAdjusted = txSorted.map((tx) => {
-    const adjustedAmount = tx.amount < 0 ? Math.abs(tx.amount) : -tx.amount;
+  const txAdjusted = txSorted
+    .map((tx) => {
+      const adjustedAmount = tx.amount < 0 ? Math.abs(tx.amount) : -tx.amount;
 
-    return { ...tx, amount: adjustedAmount };
-  });
+      return { ...tx, amount: adjustedAmount };
+    })
+    .filter((tx) => !shouldExcludeTransaction_(tx));
 
   const newSheetName = `${month}-${year}`;
   Logger.log({ newSheetName });
