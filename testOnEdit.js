@@ -2,11 +2,18 @@
 
 function testOnEdit() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const fakeRange = sheet.getRange("g4"); // Row 1, Column 15 (O1)
-  // const fakeRange = sheet.getRange(1, 2); // Row 1, Column 15 (O1)
+  const commandCell = "G3";
+
+  if (!/^[A-Z]+[1-9]\d*$/i.test(commandCell)) {
+    throw new Error(
+      'Command cell must use A1 notation, such as "G3". Received: "' + commandCell + '".'
+    );
+  }
+
+  const fakeRange = sheet.getRange(commandCell);
 
   // Simulate the edit
-  fakeRange.setValue("TRUE"); // Optional: mimic actual edit
+  fakeRange.setValue(true);
 
   const fakeEvent = {
     range: fakeRange,
