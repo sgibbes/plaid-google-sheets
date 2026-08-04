@@ -4,36 +4,46 @@ function categorizeTransactions() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   const data = sheet.getDataRange().getValues();
 
-  const amountCol = data[0].find((x) => x === "Transaction Amount");
-
-  const amntColNum = data[0].indexOf(amountCol);
-
   const descCol = data[0].find((x) => x === "Transaction Description");
   const descColNum = data[0].indexOf(descCol);
 
-  // Fetch category and values from the other sheet
+  // Categories are in column A; each category's matching words are in B onward.
   const catSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Categories");
-  const catData = catSheet.getDataRange().getValues(); // assuming this includes headers
-  const catNames = catData[0];
-  const categories = {};
-  catNames.forEach((cat) => {
-    const colNum = catNames.indexOf(cat) + 1;
-    const lastRow = catSheet.getLastRow();
-    catValues = catSheet
-      .getRange(2, colNum, lastRow)
-      .getValues()
-      ?.flat()
-      ?.filter((value) => value !== "");
-    categories[cat] = catValues;
+  if (!catSheet) {
+    throw new Error('Missing sheet: "Categories".');
+  }
+
+  const catData = catSheet.getDataRange().getDisplayValues();
+  const categories = new Map();
+
+  catData.slice(1).forEach((row) => {
+    const category = row[0].trim();
+    if (!category) {
+      return;
+    }
+
+    const keywords = row
+      .slice(1)
+      .map((keyword) => keyword.trim())
+      .filter(Boolean);
+
+    if (!categories.has(category)) {
+      categories.set(category, []);
+    }
+    categories.get(category).push(...keywords);
   });
+
+  const fallbackCategory = "UNCATEGORIZED";
+  const catNames = [...categories.keys()];
+  if (!catNames.some((category) => category.toLowerCase() === fallbackCategory.toLowerCase())) {
+    catNames.push(fallbackCategory);
+  }
 
   // get column index from transaction amount
   const amountColumnIndex = data[0].indexOf("Transaction Amount");
   const existingCategoryColIndex = data[0].indexOf("Category");
   const existingNotesColIndex = data[0].indexOf("Notes");
-  const accountColIndex = data[0].indexOf("Account");
-  const catColNum =
-    existingCategoryColIndex !== -1 ? existingCategoryColIndex + 1 : accountColIndex !== -1 ? accountColIndex + 2 : amntColNum + 2;
+  const catColNum = 5;
 
   // Add a 'Category' header if not present
   if (existingCategoryColIndex === -1) {
@@ -51,16 +61,23 @@ function categorizeTransactions() {
     return;
   }
 
+  const sortedCats = [...catNames].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  const categoryRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(sortedCats, true)
+    .setAllowInvalid(false)
+    .build();
+
   // Categorize each transaction
   for (let i = 1; i < data.length; i++) {
     const cell = sheet.getRange(i + 1, catColNum);
+    cell.setDataValidation(categoryRule);
 
     if (cell.getValue() === "") {
-      const description = data[i][descColNum].trim().toLowerCase();
+      const description = String(data[i][descColNum] || "").trim().toLowerCase();
 
       // this is the default category. If no matches, its set to this
-      let category = "UNCATEGORIZED";
-      for (const [key, keywords] of Object.entries(categories)) {
+      let category = fallbackCategory;
+      for (const [key, keywords] of categories.entries()) {
         // if any of the keywords are in the description, mark that the category
         if (
           keywords.some((keyword) => {
@@ -83,20 +100,6 @@ function categorizeTransactions() {
         }
       }
       cell.setValue(category);
-
-      const sortedCats = [...catNames].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-      // Write category to the last column, only if value is blank
-
-      // this creates a new validation rule which makes the cell a drop down?
-      const rule = SpreadsheetApp.newDataValidation()
-        .requireValueInList(
-          sortedCats.sort((a, b) => a - b), // sort alphabetically
-          true
-        )
-        .setAllowInvalid(false)
-        .build();
-
-      cell.setDataValidation(rule);
     }
   }
 }

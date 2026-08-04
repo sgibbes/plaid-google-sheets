@@ -15,29 +15,8 @@ function summarizeByCategory() {
 
   const amountColIndex = headers.indexOf("Transaction Amount");
 
-  const catSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Categories");
-  const catData = catSheet.getDataRange().getValues(); // assuming this includes headers
-  const catNames = catData[0];
-
   if (categoryColIndex === -1 || amountColIndex === -1) {
     throw new Error('Missing required headers: "Category" or "Transaction Amount"');
-  }
-
-  // Map each summary category to a source cell so the category column can use formulas.
-  const categorySources = {};
-  catNames.forEach((cat, colIndex) => {
-    const category = String(cat || "").trim();
-    if (category) {
-      categorySources[category] = "'Categories'!" + catSheet.getRange(1, colIndex + 1).getA1Notation();
-    }
-  });
-
-  // Include categories used by transactions even if they are not on Categories.
-  for (let i = 1; i < data.length; i++) {
-    const category = String(data[i][categoryColIndex] || "").trim();
-    if (category && !Object.prototype.hasOwnProperty.call(categorySources, category)) {
-      categorySources[category] = sheet.getRange(i + 1, categoryColIndex + 1).getA1Notation();
-    }
   }
 
   // Fetch Samaris's budget values from the monthly budget sheet.
@@ -48,6 +27,22 @@ function summarizeByCategory() {
   if (!budgetSheet) {
     throw new Error('Missing sheet: "' + budgetSheetName + '". Check the tab name.');
   }
+
+  const budgetData = budgetSheet.getDataRange().getDisplayValues();
+  const expenseSources = [];
+
+  budgetData.slice(1).forEach((row, rowIndex) => {
+    const expense = String(row[0] || "").trim();
+    const person = String(row[7] || "").trim().toLowerCase();
+
+    if (expense && person === "samaris") {
+      const budgetRow = rowIndex + 2;
+      expenseSources.push({
+        expense: "'" + budgetSheetName + "'!" + budgetSheet.getRange(budgetRow, 1).getA1Notation(),
+        amount: "'" + budgetSheetName + "'!" + budgetSheet.getRange(budgetRow, 4).getA1Notation(),
+      });
+    }
+  });
 
   const totalRowStart = 1; // leave one blank row after data
 
@@ -60,7 +55,7 @@ function summarizeByCategory() {
   sheet.getRange(totalRowStart, outputColStart + 4).setValue("Remaining");
 
   let currentRow = totalRowStart + 1;
-  for (const category in categorySources) {
+  for (const expenseSource of expenseSources) {
     // Insert checkbox in column H (col 8)
     const checkboxCell = sheet.getRange(currentRow, outputColStart);
     checkboxCell.insertCheckboxes();
@@ -71,7 +66,7 @@ function summarizeByCategory() {
     const actualCell = sheet.getRange(currentRow, outputColStart + 3);
     const remainingCell = sheet.getRange(currentRow, outputColStart + 4);
 
-    categoryCell.setFormula("=" + categorySources[category]);
+    categoryCell.setFormula("=" + expenseSource.expense);
 
     const categoryRef = categoryCell.getA1Notation();
     const transactionCategoryCol = sheet
@@ -83,17 +78,7 @@ function summarizeByCategory() {
       .getA1Notation()
       .replace(/\d+/g, "");
 
-    budgetCell.setFormula(
-      "=SUMIFS('" +
-        budgetSheetName +
-        "'!$D:$D,'" +
-        budgetSheetName +
-        "'!$A:$A," +
-        categoryRef +
-        ",'" +
-        budgetSheetName +
-        '\'!$H:$H,"Samaris")',
-    );
+    budgetCell.setFormula("=" + expenseSource.amount);
     actualCell.setFormula(
       "=IF(LOWER(TRIM(" +
         categoryRef +
@@ -127,8 +112,12 @@ function summarizeByCategory() {
   }
 
   // set formats to currency
-  const numRows = Object.keys(categorySources).length;
-  const currencyRange = sheet.getRange(totalRowStart + 1, outputColStart + 2, numRows, 3);
-  currencyRange.setNumberFormat("$#,##0.00");
-  sheet.getRange(totalRowStart + 1, outputColStart + 4, numRows, 1).setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
+  const numRows = expenseSources.length;
+  if (numRows > 0) {
+    const currencyRange = sheet.getRange(totalRowStart + 1, outputColStart + 2, numRows, 3);
+    currencyRange.setNumberFormat("$#,##0.00");
+    sheet
+      .getRange(totalRowStart + 1, outputColStart + 4, numRows, 1)
+      .setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
+  }
 }
