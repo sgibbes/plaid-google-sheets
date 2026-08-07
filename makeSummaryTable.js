@@ -4,9 +4,7 @@ function summarizeByCategory() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   ensureTransactionLayout_(sheet);
 
-  const data = sheet
-    .getRange(1, 1, Math.max(sheet.getLastRow(), 1), TRANSACTION_NOTES_COL)
-    .getValues();
+  const data = sheet.getRange(1, 1, Math.max(sheet.getLastRow(), 1), TRANSACTION_NOTES_COL).getValues();
   const headers = data[0];
   const categoryColIndex = headers.indexOf("Category");
   const subcategoryColIndex = headers.indexOf("SubCategory");
@@ -42,14 +40,14 @@ function summarizeByCategory() {
     throw new Error('Missing sheet: "' + budgetSheetName + '". Check the tab name.');
   }
 
-  const budgetData = budgetSheet
-    .getRange(1, 1, Math.max(budgetSheet.getLastRow(), 1), 8)
-    .getDisplayValues();
+  const budgetData = budgetSheet.getRange(1, 1, Math.max(budgetSheet.getLastRow(), 1), 8).getDisplayValues();
   const expenseSources = [];
 
   budgetData.slice(1).forEach((row, rowIndex) => {
     const expense = String(row[0] || "").trim();
-    const person = String(row[7] || "").trim().toLowerCase();
+    const person = String(row[7] || "")
+      .trim()
+      .toLowerCase();
 
     if (expense && person === "samaris") {
       const budgetRow = rowIndex + 2;
@@ -74,9 +72,9 @@ function summarizeByCategory() {
 
   const totalRowStart = 1; // leave one blank row after data
 
-  sheet.getRange(totalRowStart, outputColStart, 1, 6).setValues([
-    ["Filter", "Category Totals", "Budgeted", "Actual", "Subcategory Totals", "Remaining"],
-  ]);
+  sheet
+    .getRange(totalRowStart, outputColStart, 1, 6)
+    .setValues([["Filter", "Category Totals", "Budgeted", "Actual", "Subcategory Totals", "Remaining"]]);
 
   // Overall totals and balance calculations live two columns to the right of
   // Remaining (R:S in the standard transaction layout).
@@ -88,12 +86,14 @@ function summarizeByCategory() {
     ["remaining", "=SUM(P:P)"],
   ]);
   sheet.getRange(6, balanceLabelCol).setValue("Samaris Ending Balance");
-  sheet.getRange(7, balanceLabelCol, 2, 2).setValues([
+  sheet.getRange(7, balanceLabelCol, 4, 2).setValues([
     ["magic number", "='Budget May 2026'!B13"],
-    ["Magic number (-) ending balance", "=S7-S6"],
+    ["Difference", "=S6-S7"],
+    ["Sam's Split", "=ROUND(S8*'Budget May 2026'!C4,2)"],
+    ["Aris' Split", "=ROUND(S8*'Budget May 2026'!D4,2)"],
   ]);
   sheet.getRange(2, balanceValueCol, 3, 1).setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
-  sheet.getRange(6, balanceValueCol, 3, 1).setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
+  sheet.getRange(6, balanceValueCol, 5, 1).setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
 
   const transactionCategoryCol = getColumnLetter_(categoryColIndex + 1);
   const transactionAmountCol = getColumnLetter_(amountColIndex + 1);
@@ -171,41 +171,28 @@ function summarizeByCategory() {
   if (numRows > 0) {
     const summaryRange = sheet.getRange(totalRowStart + 1, outputColStart, numRows, 6);
     summaryRange.setValues(summaryRows);
-    sheet
-      .getRange(totalRowStart + 1, outputColStart, numRows, 1)
-      .setDataValidations(checkboxValidations);
-    sheet
-      .getRange(totalRowStart + 1, outputColStart + 1, numRows, 1)
-      .setHorizontalAlignments(categoryAlignments);
+    sheet.getRange(totalRowStart + 1, outputColStart, numRows, 1).setDataValidations(checkboxValidations);
+    sheet.getRange(totalRowStart + 1, outputColStart + 1, numRows, 1).setHorizontalAlignments(categoryAlignments);
 
     const currencyRange = sheet.getRange(totalRowStart + 1, outputColStart + 2, numRows, 4);
     currencyRange.setNumberFormat("$#,##0.00");
-    sheet
-      .getRange(totalRowStart + 1, outputColStart + 5, numRows, 1)
-      .setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
+    sheet.getRange(totalRowStart + 1, outputColStart + 5, numRows, 1).setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
   }
 
-  setSummaryConditionalFormatting_(
-    sheet,
-    outputColStart + 1,
-    outputColStart + 5,
-    balanceValueCol,
-  );
+  setSummaryConditionalFormatting_(sheet, outputColStart + 1, outputColStart + 5, balanceValueCol);
 }
 
 function setSummaryConditionalFormatting_(sheet, categoryCol, remainingCol, balanceValueCol) {
   const remainingRange = sheet.getRange(1, remainingCol, sheet.getMaxRows(), 1);
-  const balanceRanges = [sheet.getRange(4, balanceValueCol), sheet.getRange(8, balanceValueCol)];
+  const balanceRows = [4, 8, 9, 10];
+  const balanceRanges = balanceRows.map((row) => sheet.getRange(row, balanceValueCol));
 
   // Replace rules created by this function instead of duplicating them each
   // time the summary is regenerated.
   const isSummaryBalanceRule = (rule) => {
     const ranges = rule.getRanges();
     const hasRemainingRange = ranges.some(
-      (range) =>
-        range.getColumn() === remainingCol &&
-        range.getRow() === 1 &&
-        range.getNumColumns() === 1,
+      (range) => range.getColumn() === remainingCol && range.getRow() === 1 && range.getNumColumns() === 1,
     );
     const hasBothBalanceRanges = [4, 8].every((row) =>
       ranges.some(
@@ -222,23 +209,16 @@ function setSummaryConditionalFormatting_(sheet, categoryCol, remainingCol, bala
 
   const rules = sheet.getConditionalFormatRules().filter((rule) => !isSummaryBalanceRule(rule));
   const remainingColLetter = remainingRange.getA1Notation().replace(/\d+.*$/, "");
-  const categoryColLetter = sheet
-    .getRange(1, categoryCol)
-    .getA1Notation()
-    .replace(/\d+/g, "");
+  const categoryColLetter = sheet.getRange(1, categoryCol).getA1Notation().replace(/\d+/g, "");
   rules.push(
     SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied(
-        "=AND(" + remainingColLetter + '1>0,$' + categoryColLetter + '1<>"UNCATEGORIZED")',
-      )
+      .whenFormulaSatisfied("=AND(" + remainingColLetter + "1>0,$" + categoryColLetter + '1<>"UNCATEGORIZED")')
       .setBackground("#b7e1cd")
       .setFontColor("#0d652d")
       .setRanges([remainingRange])
       .build(),
     SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied(
-        "=AND(" + remainingColLetter + '1<0,$' + categoryColLetter + '1<>"UNCATEGORIZED")',
-      )
+      .whenFormulaSatisfied("=AND(" + remainingColLetter + "1<0,$" + categoryColLetter + '1<>"UNCATEGORIZED")')
       .setBackground("#f4c7c3")
       .setFontColor("#b31412")
       .setRanges([remainingRange])
