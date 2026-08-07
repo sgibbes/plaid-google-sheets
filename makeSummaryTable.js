@@ -81,7 +81,25 @@ function summarizeByCategory() {
   sheet.getRange(totalRowStart, outputColStart + 1).setValue("Category Totals");
   sheet.getRange(totalRowStart, outputColStart + 2).setValue("Budgeted");
   sheet.getRange(totalRowStart, outputColStart + 3).setValue("Actual");
-  sheet.getRange(totalRowStart, outputColStart + 4).setValue("Remaining");
+  sheet.getRange(totalRowStart, outputColStart + 4).setValue("Subcategory Totals");
+  sheet.getRange(totalRowStart, outputColStart + 5).setValue("Remaining");
+
+  // Overall totals and balance calculations live two columns to the right of
+  // Remaining (R:S in the standard transaction layout).
+  const balanceLabelCol = outputColStart + 7;
+  const balanceValueCol = balanceLabelCol + 1;
+  sheet.getRange(2, balanceLabelCol, 3, 2).setValues([
+    ["total spend within budgeted categories", "=SUM(N:N)"],
+    ["budget", "=SUM(M:M)"],
+    ["remaining", "=SUM(P:P)"],
+  ]);
+  sheet.getRange(6, balanceLabelCol).setValue("Samaris Ending Balance");
+  sheet.getRange(7, balanceLabelCol, 2, 2).setValues([
+    ["magic number", "='Budget May 2026'!B13"],
+    ["Magic number (-) ending balance", "=S7-S6"],
+  ]);
+  sheet.getRange(2, balanceValueCol, 3, 1).setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
+  sheet.getRange(6, balanceValueCol, 3, 1).setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
 
   let currentRow = totalRowStart + 1;
   for (const expenseSource of expenseSources) {
@@ -93,7 +111,7 @@ function summarizeByCategory() {
     const categoryCell = sheet.getRange(currentRow, outputColStart + 1);
     const budgetCell = sheet.getRange(currentRow, outputColStart + 2);
     const actualCell = sheet.getRange(currentRow, outputColStart + 3);
-    const remainingCell = sheet.getRange(currentRow, outputColStart + 4);
+    const remainingCell = sheet.getRange(currentRow, outputColStart + 5);
 
     if (expenseSource.expense) {
       categoryCell.setFormula("=" + expenseSource.expense);
@@ -141,7 +159,7 @@ function summarizeByCategory() {
     for (const subcategory of subcategories) {
       const subcategoryFilterCell = sheet.getRange(currentRow, outputColStart);
       const subcategoryCell = sheet.getRange(currentRow, outputColStart + 1);
-      const subcategoryActualCell = sheet.getRange(currentRow, outputColStart + 3);
+      const subcategoryActualCell = sheet.getRange(currentRow, outputColStart + 4);
       subcategoryFilterCell.clearContent();
       subcategoryFilterCell.clearDataValidations();
       subcategoryCell.setValue(subcategory);
@@ -175,10 +193,83 @@ function summarizeByCategory() {
   // set formats to currency
   const numRows = currentRow - (totalRowStart + 1);
   if (numRows > 0) {
-    const currencyRange = sheet.getRange(totalRowStart + 1, outputColStart + 2, numRows, 3);
+    const currencyRange = sheet.getRange(totalRowStart + 1, outputColStart + 2, numRows, 4);
     currencyRange.setNumberFormat("$#,##0.00");
     sheet
-      .getRange(totalRowStart + 1, outputColStart + 4, numRows, 1)
+      .getRange(totalRowStart + 1, outputColStart + 5, numRows, 1)
       .setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
   }
+
+  setSummaryConditionalFormatting_(
+    sheet,
+    outputColStart + 1,
+    outputColStart + 5,
+    balanceValueCol,
+  );
+}
+
+function setSummaryConditionalFormatting_(sheet, categoryCol, remainingCol, balanceValueCol) {
+  const remainingRange = sheet.getRange(1, remainingCol, sheet.getMaxRows(), 1);
+  const balanceRanges = [sheet.getRange(4, balanceValueCol), sheet.getRange(8, balanceValueCol)];
+
+  // Replace rules created by this function instead of duplicating them each
+  // time the summary is regenerated.
+  const isSummaryBalanceRule = (rule) => {
+    const ranges = rule.getRanges();
+    const hasRemainingRange = ranges.some(
+      (range) =>
+        range.getColumn() === remainingCol &&
+        range.getRow() === 1 &&
+        range.getNumColumns() === 1,
+    );
+    const hasBothBalanceRanges = [4, 8].every((row) =>
+      ranges.some(
+        (range) =>
+          range.getColumn() === balanceValueCol &&
+          range.getRow() === row &&
+          range.getNumRows() === 1 &&
+          range.getNumColumns() === 1,
+      ),
+    );
+
+    return hasRemainingRange || hasBothBalanceRanges;
+  };
+
+  const rules = sheet.getConditionalFormatRules().filter((rule) => !isSummaryBalanceRule(rule));
+  const remainingColLetter = remainingRange.getA1Notation().replace(/\d+.*$/, "");
+  const categoryColLetter = sheet
+    .getRange(1, categoryCol)
+    .getA1Notation()
+    .replace(/\d+/g, "");
+  rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(
+        "=AND(" + remainingColLetter + '1>0,$' + categoryColLetter + '1<>"UNCATEGORIZED")',
+      )
+      .setBackground("#b7e1cd")
+      .setFontColor("#0d652d")
+      .setRanges([remainingRange])
+      .build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(
+        "=AND(" + remainingColLetter + '1<0,$' + categoryColLetter + '1<>"UNCATEGORIZED")',
+      )
+      .setBackground("#f4c7c3")
+      .setFontColor("#b31412")
+      .setRanges([remainingRange])
+      .build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberGreaterThan(0)
+      .setBackground("#b7e1cd")
+      .setFontColor("#0d652d")
+      .setRanges(balanceRanges)
+      .build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenNumberLessThan(0)
+      .setBackground("#f4c7c3")
+      .setFontColor("#b31412")
+      .setRanges(balanceRanges)
+      .build(),
+  );
+  sheet.setConditionalFormatRules(rules);
 }

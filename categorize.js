@@ -1,15 +1,28 @@
 /** @format */
 
 function categorizeTransactions() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getActiveSheet();
   ensureTransactionLayout_(sheet);
-  const data = sheet.getDataRange().getValues();
 
-  const descCol = data[0].find((x) => x === "Transaction Description");
-  const descColNum = data[0].indexOf(descCol);
+  // Only read the transaction columns. Summary tables to the right can make
+  // getDataRange() much larger than the transaction data itself.
+  const lastSheetRow = sheet.getLastRow();
+  const data = sheet
+    .getRange(1, 1, Math.max(lastSheetRow, 1), TRANSACTION_CATEGORY_COL)
+    .getValues();
+  const headers = data[0];
+  const descColNum = headers.indexOf("Transaction Description");
+  const amountColumnIndex = headers.indexOf("Transaction Amount");
+
+  if (descColNum === -1 || amountColumnIndex === -1) {
+    throw new Error(
+      'Missing required headers: "Transaction Description" or "Transaction Amount".',
+    );
+  }
 
   // Categories are in column A; each category's matching words are in B onward.
-  const catSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Categories");
+  const catSheet = spreadsheet.getSheetByName("Categories");
   if (!catSheet) {
     throw new Error('Missing sheet: "Categories".');
   }
@@ -26,7 +39,14 @@ function categorizeTransactions() {
     const keywords = row
       .slice(1)
       .map((keyword) => keyword.trim())
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((keyword) => {
+        const exact = keyword.startsWith('"') && keyword.endsWith('"');
+        return {
+          exact,
+          value: (exact ? keyword.slice(1, -1) : keyword).toLowerCase(),
+        };
+      });
 
     if (!categories.has(category)) {
       categories.set(category, []);
@@ -40,15 +60,7 @@ function categorizeTransactions() {
     catNames.push(fallbackCategory);
   }
 
-  // get column index from transaction amount
-  const amountColumnIndex = data[0].indexOf("Transaction Amount");
   const catColNum = TRANSACTION_CATEGORY_COL;
-
-  // Add a 'Amount' column check (assuming amounts are already in the data)
-  if (amountColumnIndex === -1) {
-    SpreadsheetApp.getUi().alert("No 'Amount' column found. Please add one.");
-    return;
-  }
 
   const sortedCats = [...catNames].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   const categoryRule = SpreadsheetApp.newDataValidation()
@@ -56,39 +68,48 @@ function categorizeTransactions() {
     .setAllowInvalid(false)
     .build();
 
-  // Categorize each transaction
+  // Ignore summary rows below the transactions. A transaction row has either a
+  // description or an amount, which also keeps intentionally blank rows intact.
+  let lastTransactionIndex = 0;
   for (let i = 1; i < data.length; i++) {
-    const cell = sheet.getRange(i + 1, catColNum);
-    cell.setDataValidation(categoryRule);
-
-    if (cell.getValue() === "") {
-      const description = String(data[i][descColNum] || "").trim().toLowerCase();
-
-      // this is the default category. If no matches, its set to this
-      let category = fallbackCategory;
-      for (const [key, keywords] of categories.entries()) {
-        // if any of the keywords are in the description, mark that the category
-        if (
-          keywords.some((keyword) => {
-            // keywords wrapped in double quotes need an exact match
-            const exactMatchWord = keyword.startsWith('"') && keyword.endsWith('"');
-            let matchCat = false;
-            if (exactMatchWord) {
-              const exact = keyword.slice(1, -1).toLowerCase();
-
-              matchCat = description === exact;
-            } else {
-              matchCat = description.includes(keyword.toLowerCase());
-            }
-
-            return matchCat;
-          })
-        ) {
-          category = key;
-          break;
-        }
-      }
-      cell.setValue(category);
+    if (data[i][descColNum] !== "" || data[i][amountColumnIndex] !== "") {
+      lastTransactionIndex = i;
     }
   }
+
+  if (lastTransactionIndex === 0) {
+    return;
+  }
+
+  const categoryRange = sheet.getRange(2, catColNum, lastTransactionIndex, 1);
+  const categoryValues = categoryRange.getValues();
+
+  for (let i = 0; i < categoryValues.length; i++) {
+    // Keep categories that were assigned or edited manually.
+    if (categoryValues[i][0] !== "") {
+      continue;
+    }
+
+    const description = String(data[i + 1][descColNum] || "").trim().toLowerCase();
+    let category = fallbackCategory;
+
+    for (const [categoryName, keywords] of categories.entries()) {
+      if (
+        keywords.some((keyword) =>
+          keyword.exact
+            ? description === keyword.value
+            : description.includes(keyword.value),
+        )
+      ) {
+        category = categoryName;
+        break;
+      }
+    }
+
+    categoryValues[i][0] = category;
+  }
+
+  // These two bulk writes replace several calls per transaction.
+  categoryRange.setDataValidation(categoryRule);
+  categoryRange.setValues(categoryValues);
 }
