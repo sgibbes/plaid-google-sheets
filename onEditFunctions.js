@@ -192,7 +192,16 @@ function handleEdit_(e) {
         Logger.log({monthYr})
         month = monthYr.split("-")[0];
         year = monthYr.split("-")[1];
-        getRealTransactions(month, year);
+        const transactionSheet = getRealTransactions(month, year);
+        if (transactionSheet) {
+          const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+          spreadsheet.setActiveSheet(transactionSheet);
+          spreadsheet.toast("Categorizing Transactions");
+          categorizeTransactions();
+          spreadsheet.toast("Creating Summary Table");
+          summarizeByCategory();
+          spreadsheet.toast("Transactions, categories, and summary are ready.");
+        }
       }
 
       if (runningFromCurrentPage) {

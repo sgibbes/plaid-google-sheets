@@ -31,6 +31,7 @@ function createDataInSheet(newSheetName, txAdjusted) {
   sheet.getRange(1, CONTROL_CHECKBOX_COL, 5, 1).insertCheckboxes();
 
   sheet.autoResizeColumns(1, 10);
+  return sheet;
 }
 
 function getTransactionRow_(tx, existingNotes = {}, existingSubcategories = {}) {
@@ -434,16 +435,15 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
 
     if (response === "ok") {
       spreadsheet.deleteSheet(sheetToCheck);
-      createDataInSheet(newSheetName, txAdjusted);
+      return createDataInSheet(newSheetName, txAdjusted);
     } else {
-      return;
+      return null;
     }
   }
 
   // the sheet does not already exist
   if (!sheetToCheck) {
-    createDataInSheet(newSheetName, txAdjusted);
-    return;
+    return createDataInSheet(newSheetName, txAdjusted);
   }
 
   if (append) {
@@ -462,7 +462,11 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
     } else {
       spreadsheet.toast("No new transactions found.");
     }
+
+    return sheetToCheck;
   }
+
+  return null;
 }
 
 // list all the accounts linked
