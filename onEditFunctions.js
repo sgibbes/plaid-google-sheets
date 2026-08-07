@@ -67,12 +67,15 @@ function handleEdit_(e) {
     const editedCellLabel = editedSheet.getRange(editedRow, editedCellLabelCol).getValue();
 
     const headerRow = editedSheet.getRange(1, 1, 1, editedSheet.getLastColumn()).getValues()[0];
-    const checkboxCol = headerRow.indexOf("Filter") + 1 || 8;
-    const categoryCol = headerRow.indexOf("Category Totals") + 1 || 9;
+    const checkboxCol = headerRow.indexOf("Filter") + 1 || 11;
+    const categoryCol = headerRow.indexOf("Category Totals") + 1 || 12;
     const summaryStartRow = 1; // Adjust as needed
-    const summaryEndRow = 20; // Adjust as needed
+    const summaryEndRow = editedSheet
+      .getRange(editedSheet.getMaxRows(), categoryCol)
+      .getNextDataCell(SpreadsheetApp.Direction.UP)
+      .getRow();
     const dataStartRow = 2;
-    const categoryDataCol = headerRow.indexOf("Category") + 1 || 4;
+    const categoryDataCol = headerRow.indexOf("Category") + 1 || TRANSACTION_CATEGORY_COL;
     // the edited cell is the check box AND the value to the left is 'Run Categories'
     // CATEGORIZE
     if (
@@ -105,14 +108,13 @@ function handleEdit_(e) {
       e.value === "TRUE"
     ) {
       // Gather selected categories
-      const categories = [];
-      for (let row = summaryStartRow; row <= summaryEndRow; row++) {
-        const checked = editedSheet.getRange(row, checkboxCol).getValue();
-        const category = editedSheet.getRange(row, categoryCol).getValue();
-        if (checked && category) {
-          categories.push(category);
-        }
-      }
+      const summaryValues = editedSheet
+        .getRange(summaryStartRow, checkboxCol, summaryEndRow - summaryStartRow + 1, categoryCol - checkboxCol + 1)
+        .getValues();
+      const categoryOffset = categoryCol - checkboxCol;
+      const categories = summaryValues
+        .filter((row) => row[0] === true && row[categoryOffset])
+        .map((row) => row[categoryOffset]);
       Logger.log(categories);
       // Remove existing filter if there is one
       let filter = editedSheet.getFilter();

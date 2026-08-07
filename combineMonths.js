@@ -21,9 +21,9 @@ function addToSummarySheet() {
   const summaryData = {};
   for (const sheet in sheetNames) {
     const sheetToGet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetNames[sheet]);
-    const lastRow = sheetToGet.getRange("J:K").getLastRow();
+    const lastRow = sheetToGet.getRange("K:L").getLastRow();
 
-    const range = sheetToGet.getRange(1, 10, lastRow, 2); // row 1, col 1 (A), height = lastRow, width = 2 columns (A & B)
+    const range = sheetToGet.getRange(1, 11, lastRow, 2);
     const values = range.getValues();
     const nonEmptyRows = values.filter((row) => row[0] !== "" || row[1] !== "");
     summaryData[sheetNames[sheet]] = nonEmptyRows;

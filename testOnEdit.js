@@ -2,7 +2,7 @@
 
 function testOnEdit() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const commandCell = "G3";
+  const commandCell = "I3";
 
   if (!/^[A-Z]+[1-9]\d*$/i.test(commandCell)) {
     throw new Error(

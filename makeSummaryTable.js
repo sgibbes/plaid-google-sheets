@@ -7,7 +7,8 @@ function summarizeByCategory() {
   const data = sheet.getDataRange().getValues(); // includes headers
   const headers = data[0];
   const categoryColIndex = headers.indexOf("Category");
-  const outputColStart = categoryColIndex + 6; // leaves room for Notes after Category
+  const subcategoryColIndex = headers.indexOf("SubCategory");
+  const outputColStart = categoryColIndex + 7; // accounts for SubCategory and Notes after Category
 
   // clear contents
   const rangeToClear = sheet.getRange(1, outputColStart, 2000, 8);
@@ -15,9 +16,25 @@ function summarizeByCategory() {
 
   const amountColIndex = headers.indexOf("Transaction Amount");
 
-  if (categoryColIndex === -1 || amountColIndex === -1) {
-    throw new Error('Missing required headers: "Category" or "Transaction Amount"');
+  if (categoryColIndex === -1 || subcategoryColIndex === -1 || amountColIndex === -1) {
+    throw new Error('Missing required headers: "Category", "SubCategory", or "Transaction Amount"');
   }
+
+  const subcategoriesByCategory = new Map();
+  data.slice(1).forEach((row) => {
+    const category = String(row[categoryColIndex] || "").trim();
+    const subcategory = String(row[subcategoryColIndex] || "").trim();
+    if (!category || !subcategory) {
+      return;
+    }
+
+    const categoryKey = category.toLowerCase();
+    const subcategories = subcategoriesByCategory.get(categoryKey) || [];
+    if (!subcategories.some((value) => value.toLowerCase() === subcategory.toLowerCase())) {
+      subcategories.push(subcategory);
+      subcategoriesByCategory.set(categoryKey, subcategories);
+    }
+  });
 
   // Fetch Samaris's budget values from the monthly budget sheet.
   // Column A = category, column D = amount, column H = person.
@@ -38,10 +55,22 @@ function summarizeByCategory() {
     if (expense && person === "samaris") {
       const budgetRow = rowIndex + 2;
       expenseSources.push({
+        category: expense,
         expense: "'" + budgetSheetName + "'!" + budgetSheet.getRange(budgetRow, 1).getA1Notation(),
         amount: "'" + budgetSheetName + "'!" + budgetSheet.getRange(budgetRow, 4).getA1Notation(),
       });
     }
+  });
+
+  ["SumZero", "UNCATEGORIZED"].forEach((category) => {
+    const existingIndex = expenseSources.findIndex(
+      (source) => source.category.toLowerCase() === category.toLowerCase(),
+    );
+    if (existingIndex !== -1) {
+      expenseSources.splice(existingIndex, 1);
+    }
+
+    expenseSources.push({ category, expense: null, amount: null });
   });
 
   const totalRowStart = 1; // leave one blank row after data
@@ -56,7 +85,7 @@ function summarizeByCategory() {
 
   let currentRow = totalRowStart + 1;
   for (const expenseSource of expenseSources) {
-    // Insert checkbox in column H (col 8)
+    // Parent category rows can be selected by the summary filter.
     const checkboxCell = sheet.getRange(currentRow, outputColStart);
     checkboxCell.insertCheckboxes();
     checkboxCell.setValue(false);
@@ -66,7 +95,11 @@ function summarizeByCategory() {
     const actualCell = sheet.getRange(currentRow, outputColStart + 3);
     const remainingCell = sheet.getRange(currentRow, outputColStart + 4);
 
-    categoryCell.setFormula("=" + expenseSource.expense);
+    if (expenseSource.expense) {
+      categoryCell.setFormula("=" + expenseSource.expense);
+    } else {
+      categoryCell.setValue(expenseSource.category);
+    }
 
     const categoryRef = categoryCell.getA1Notation();
     const transactionCategoryCol = sheet
@@ -77,42 +110,70 @@ function summarizeByCategory() {
       .getRange(1, amountColIndex + 1)
       .getA1Notation()
       .replace(/\d+/g, "");
+    const transactionSubcategoryCol = sheet
+      .getRange(1, subcategoryColIndex + 1)
+      .getA1Notation()
+      .replace(/\d+/g, "");
 
-    budgetCell.setFormula("=" + expenseSource.amount);
+    if (expenseSource.amount) {
+      budgetCell.setFormula("=" + expenseSource.amount);
+    } else {
+      budgetCell.setValue(0);
+    }
     actualCell.setFormula(
-      "=IF(LOWER(TRIM(" +
-        categoryRef +
-        '))="income",' +
-        "SUMIF($" +
+      "=SUMIFS($" +
+        transactionAmountCol +
+        ":$" +
+        transactionAmountCol +
+        ",$" +
         transactionCategoryCol +
         ":$" +
         transactionCategoryCol +
         "," +
         categoryRef +
-        ",$" +
-        transactionAmountCol +
-        ":$" +
-        transactionAmountCol +
-        ")," +
-        "-SUMIF($" +
-        transactionCategoryCol +
-        ":$" +
-        transactionCategoryCol +
-        "," +
-        categoryRef +
-        ",$" +
-        transactionAmountCol +
-        ":$" +
-        transactionAmountCol +
-        "))",
+        ")*-1",
     );
     remainingCell.setFormula("=" + budgetCell.getA1Notation() + "-" + actualCell.getA1Notation());
 
     currentRow++;
+
+    const subcategories = subcategoriesByCategory.get(expenseSource.category.toLowerCase()) || [];
+    for (const subcategory of subcategories) {
+      const subcategoryFilterCell = sheet.getRange(currentRow, outputColStart);
+      const subcategoryCell = sheet.getRange(currentRow, outputColStart + 1);
+      const subcategoryActualCell = sheet.getRange(currentRow, outputColStart + 3);
+      subcategoryFilterCell.clearContent();
+      subcategoryFilterCell.clearDataValidations();
+      subcategoryCell.setValue(subcategory);
+      subcategoryCell.setHorizontalAlignment("right");
+
+      const subcategoryRef = subcategoryCell.getA1Notation();
+      subcategoryActualCell.setFormula(
+        "=SUMIFS($" +
+          transactionAmountCol +
+          ":$" +
+          transactionAmountCol +
+          ",$" +
+          transactionCategoryCol +
+          ":$" +
+          transactionCategoryCol +
+          "," +
+          categoryRef +
+          ",$" +
+          transactionSubcategoryCol +
+          ":$" +
+          transactionSubcategoryCol +
+          "," +
+          subcategoryRef +
+          ")*-1",
+      );
+
+      currentRow++;
+    }
   }
 
   // set formats to currency
-  const numRows = expenseSources.length;
+  const numRows = currentRow - (totalRowStart + 1);
   if (numRows > 0) {
     const currencyRange = sheet.getRange(totalRowStart + 1, outputColStart + 2, numRows, 3);
     currencyRange.setNumberFormat("$#,##0.00");

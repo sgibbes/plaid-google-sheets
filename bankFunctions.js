@@ -1,7 +1,18 @@
 /** @format */
-const TRANSACTION_HEADERS = ["Date", "Transaction Description", "Transaction Amount", "Account", "Category", "Notes"];
-const CONTROL_LABEL_COL = 7;
-const CONTROL_CHECKBOX_COL = 8;
+const TRANSACTION_HEADERS = [
+  "Date",
+  "Transaction Description",
+  "Transaction Amount",
+  "Account",
+  "Category",
+  "SubCategory",
+  "Notes",
+];
+const TRANSACTION_CATEGORY_COL = 5;
+const TRANSACTION_SUBCATEGORY_COL = 6;
+const TRANSACTION_NOTES_COL = 7;
+const CONTROL_LABEL_COL = 8;
+const CONTROL_CHECKBOX_COL = 9;
 
 function createDataInSheet(newSheetName, txAdjusted) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -32,7 +43,7 @@ function createDataInSheet(newSheetName, txAdjusted) {
   sheet.autoResizeColumns(1, 10);
 }
 
-function getTransactionRow_(tx, existingNotes) {
+function getTransactionRow_(tx, existingNotes = {}, existingSubcategories = {}) {
   const key = getTransactionNoteKey_({
     date: tx.date,
     name: tx.name,
@@ -40,7 +51,15 @@ function getTransactionRow_(tx, existingNotes) {
     accountName: tx.accountName,
   });
 
-  return [tx.date, tx.name, tx.amount, tx.accountName, "", existingNotes[key] || ""];
+  return [
+    tx.date,
+    tx.name,
+    tx.amount,
+    tx.accountName,
+    "",
+    existingSubcategories[key] || "",
+    existingNotes[key] || "",
+  ];
 }
 
 function shouldExcludeTransaction_(tx) {
@@ -67,7 +86,7 @@ function getTransactionNoteKeyValue_(value, isDate) {
   return String(value || "").trim();
 }
 
-function getExistingNotes_(sheet) {
+function getExistingTransactionValues_(sheet, valueColumnName) {
   const data = sheet.getDataRange().getValues();
   if (data.length < 2) {
     return {};
@@ -78,16 +97,16 @@ function getExistingNotes_(sheet) {
   const descriptionCol = headers.indexOf("Transaction Description");
   const amountCol = headers.indexOf("Transaction Amount");
   const accountCol = headers.indexOf("Account");
-  const notesCol = headers.indexOf("Notes");
+  const valueCol = headers.indexOf(valueColumnName);
 
-  if ([dateCol, descriptionCol, amountCol, accountCol, notesCol].some((col) => col === -1)) {
+  if ([dateCol, descriptionCol, amountCol, accountCol, valueCol].some((col) => col === -1)) {
     return {};
   }
 
-  return data.slice(1).reduce((notes, row) => {
-    const note = row[notesCol];
-    if (!note) {
-      return notes;
+  return data.slice(1).reduce((values, row) => {
+    const value = row[valueCol];
+    if (!value) {
+      return values;
     }
 
     const key = getTransactionNoteKey_({
@@ -96,27 +115,41 @@ function getExistingNotes_(sheet) {
       amount: row[amountCol],
       accountName: row[accountCol],
     });
-    notes[key] = note;
-    return notes;
+    values[key] = value;
+    return values;
   }, {});
+}
+
+function getExistingNotes_(sheet) {
+  return getExistingTransactionValues_(sheet, "Notes");
+}
+
+function getExistingSubcategories_(sheet) {
+  return getExistingTransactionValues_(sheet, "SubCategory");
 }
 
 function ensureTransactionLayout_(sheet) {
   let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  let accountCol = headers.indexOf("Account") + 1;
   let categoryCol = headers.indexOf("Category") + 1;
   let notesCol = headers.indexOf("Notes") + 1;
 
   if (!categoryCol) {
-    categoryCol = accountCol ? accountCol + 1 : 5;
-    sheet.getRange(1, categoryCol).setValue("Category");
+    categoryCol = TRANSACTION_CATEGORY_COL;
+    sheet.getRange(1, TRANSACTION_CATEGORY_COL).setValue("Category");
     headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     notesCol = headers.indexOf("Notes") + 1;
   }
 
+  // Upgrade the old layout by inserting SubCategory at F exactly once.
+  if (notesCol === TRANSACTION_SUBCATEGORY_COL) {
+    sheet.insertColumnAfter(TRANSACTION_CATEGORY_COL);
+    notesCol++;
+  }
+
+  sheet.getRange(1, TRANSACTION_SUBCATEGORY_COL).setValue("SubCategory");
+
   if (!notesCol) {
-    sheet.insertColumnAfter(categoryCol);
-    sheet.getRange(1, categoryCol + 1).setValue("Notes");
+    sheet.getRange(1, TRANSACTION_NOTES_COL).setValue("Notes");
   }
 }
 
@@ -312,7 +345,8 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
     const sheet = sheetToCheck || spreadsheet.getActiveSheet();
     ensureTransactionLayout_(sheet);
     const existingNotes = getExistingNotes_(sheet);
-    const values = txAdjusted.map((tx) => getTransactionRow_(tx, existingNotes));
+    const existingSubcategories = getExistingSubcategories_(sheet);
+    const values = txAdjusted.map((tx) => getTransactionRow_(tx, existingNotes, existingSubcategories));
 
     sheet.getRange(1, 1, 1, TRANSACTION_HEADERS.length).setValues([TRANSACTION_HEADERS]);
     sheet.getRange(2, 1, sheet.getMaxRows() - 1, TRANSACTION_HEADERS.length).clearContent();

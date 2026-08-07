@@ -2,6 +2,7 @@
 
 function categorizeTransactions() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  ensureTransactionLayout_(sheet);
   const data = sheet.getDataRange().getValues();
 
   const descCol = data[0].find((x) => x === "Transaction Description");
@@ -41,19 +42,7 @@ function categorizeTransactions() {
 
   // get column index from transaction amount
   const amountColumnIndex = data[0].indexOf("Transaction Amount");
-  const existingCategoryColIndex = data[0].indexOf("Category");
-  const existingNotesColIndex = data[0].indexOf("Notes");
-  const catColNum = 5;
-
-  // Add a 'Category' header if not present
-  if (existingCategoryColIndex === -1) {
-    sheet.getRange(1, catColNum).setValue("Category");
-  }
-
-  if (existingNotesColIndex === -1) {
-    sheet.insertColumnAfter(catColNum);
-    sheet.getRange(1, catColNum + 1).setValue("Notes");
-  }
+  const catColNum = TRANSACTION_CATEGORY_COL;
 
   // Add a 'Amount' column check (assuming amounts are already in the data)
   if (amountColumnIndex === -1) {
