@@ -85,7 +85,41 @@ function summarizeByCategory() {
     ["budget", "=SUM(M:M)"],
     ["remaining", "=SUM(P:P)"],
   ]);
+  const endingBalanceCell = sheet.getRange(6, balanceValueCol);
   sheet.getRange(6, balanceLabelCol).setValue("Samaris Ending Balance");
+  const dateColIndex = headers.indexOf("Date");
+  const descriptionColIndex = headers.indexOf("Transaction Description");
+  const accountColIndex = headers.indexOf("Account");
+  let monthlyInterestDate = null;
+
+  if (dateColIndex !== -1 && descriptionColIndex !== -1 && accountColIndex !== -1) {
+    data.slice(1).forEach((row) => {
+      if (
+        isMonthlyInterestEndingBalanceTransaction_({
+        name: row[descriptionColIndex],
+        accountName: row[accountColIndex],
+        })
+      ) {
+        const transactionDate = getIsoDateValue_(row[dateColIndex]);
+        if (transactionDate && (!monthlyInterestDate || transactionDate > monthlyInterestDate)) {
+          monthlyInterestDate = transactionDate;
+        }
+      }
+    });
+  }
+
+  if (monthlyInterestDate) {
+    const endingBalance = getHistoricalBalanceForAccountOnDate_(
+      "360 Checking (1147)",
+      monthlyInterestDate,
+    );
+    if (endingBalance === null || endingBalance === undefined) {
+      throw new Error(
+        'Could not calculate the "360 Checking (1147)" balance for ' + monthlyInterestDate + ".",
+      );
+    }
+    endingBalanceCell.setValue(endingBalance);
+  }
   sheet.getRange(7, balanceLabelCol, 4, 2).setValues([
     ["magic number", "='Budget May 2026'!B13"],
     ["Difference", "=S6-S7"],

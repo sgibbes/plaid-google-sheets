@@ -60,6 +60,13 @@ function shouldExcludeTransaction_(tx) {
   return description === "best buy" && amountInCents === -121794;
 }
 
+function isMonthlyInterestEndingBalanceTransaction_(tx) {
+  const description = String(tx.name || "").trim().toLowerCase();
+  const accountName = String(tx.accountName || "").trim().toLowerCase();
+
+  return description === "monthly interest paid" && accountName === "360 checking (1147)";
+}
+
 function getTransactionNoteKey_(tx) {
   return [
     getTransactionNoteKeyValue_(tx.date, true),
@@ -136,13 +143,7 @@ function getTransactionAppendState_(sheet) {
     }
 
     lastTransactionRow = index + 2;
-    let isoDate = null;
-    if (value instanceof Date && !isNaN(value.getTime())) {
-      isoDate = Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
-    } else {
-      const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
-      isoDate = match ? match[1] : null;
-    }
+    const isoDate = getIsoDateValue_(value);
 
     if (isoDate && (!latestDate || isoDate > latestDate)) {
       latestDate = isoDate;
@@ -150,6 +151,15 @@ function getTransactionAppendState_(sheet) {
   });
 
   return { lastTransactionRow, latestDate };
+}
+
+function getIsoDateValue_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  }
+
+  const match = String(value || "").match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
 }
 
 function getNextIsoDate_(isoDate) {
@@ -189,6 +199,81 @@ function getAccountDisplayName_(account) {
   const name = account.official_name || account.name || account.subtype || account.account_id;
 
   return account.mask ? `${name} (${account.mask})` : name;
+}
+
+function getPlaidAccountConnectionByName_(targetAccountName) {
+  const { clientId, secret } = getPlaidCredentials_();
+  const accessTokens = getPlaidAccessTokens_();
+  if (accessTokens.length === 0) {
+    throw new Error("No access token found. Run launchPlaidLink() first.");
+  }
+
+  const responses = UrlFetchApp.fetchAll(
+    accessTokens.map((accessToken) => ({
+      url: "https://production.plaid.com/accounts/get",
+      method: "post",
+      contentType: "application/json",
+      muteHttpExceptions: true,
+      payload: JSON.stringify({
+        client_id: clientId,
+        secret,
+        access_token: accessToken,
+      }),
+    })),
+  );
+  const normalizedTarget = String(targetAccountName).trim().toLowerCase();
+
+  for (let index = 0; index < responses.length; index++) {
+    const response = responses[index];
+    const text = response.getContentText();
+    const data = JSON.parse(text);
+    if (response.getResponseCode() >= 400 || !data.accounts) {
+      throw new Error("Plaid accounts/get failed: " + text);
+    }
+
+    const account = data.accounts.find(
+      (candidate) => getAccountDisplayName_(candidate).trim().toLowerCase() === normalizedTarget,
+    );
+    if (account) {
+      return { accessToken: accessTokens[index], account };
+    }
+  }
+
+  return null;
+}
+
+function getHistoricalBalanceForAccountOnDate_(targetAccountName, targetDate) {
+  const connection = getPlaidAccountConnectionByName_(targetAccountName);
+  if (!connection || !connection.account.balances) {
+    return null;
+  }
+
+  const currentBalance = connection.account.balances.current;
+  const isoTargetDate = getIsoDateValue_(targetDate);
+  if (currentBalance === null || currentBalance === undefined || !isoTargetDate) {
+    return null;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (isoTargetDate >= today) {
+    return currentBalance;
+  }
+
+  const transactionsAfterTarget = getTransactionsForAccessTokens_(
+    [connection.accessToken],
+    getNextIsoDate_(isoTargetDate),
+    today,
+  );
+  const laterPostedTotal = transactionsAfterTarget
+    .filter(
+      (transaction) =>
+        transaction.account_id === connection.account.account_id && !transaction.pending,
+    )
+    .reduce((total, transaction) => total + Number(transaction.amount || 0), 0);
+
+  // Plaid transaction amounts are positive for outflows and negative for
+  // inflows, so adding later amounts rolls the current balance backward.
+  return currentBalance + laterPostedTotal;
 }
 
 function getAccountLookupForAccessToken_(accessToken) {
