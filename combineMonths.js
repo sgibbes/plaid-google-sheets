@@ -5,7 +5,8 @@ function addToSummarySheet() {
   // Logger.log(promptResult)
 
   // Fetch budget values from the other sheet
-  const budgetSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Simplified Samaris Acct Budget");
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const budgetSheet = spreadsheet.getSheetByName("Simplified Samaris Acct Budget");
   const budgetData = budgetSheet.getDataRange().getValues(); // assuming this includes headers
   const budgetMap = {};
 
@@ -20,8 +21,8 @@ function addToSummarySheet() {
   Logger.log(sheetNames)
   const summaryData = {};
   for (const sheet in sheetNames) {
-    const sheetToGet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetNames[sheet]);
-    const lastRow = sheetToGet.getRange("K:L").getLastRow();
+    const sheetToGet = spreadsheet.getSheetByName(sheetNames[sheet]);
+    const lastRow = sheetToGet.getLastRow();
 
     const range = sheetToGet.getRange(1, 11, lastRow, 2);
     const values = range.getValues();
@@ -38,29 +39,15 @@ function addToSummarySheet() {
   }
   //   {March 2025=[[Income, 6027.86], [Discovery Plus, 19.98], [Groceries, 1005.6199999999999], [Sam Moving Money, 640.1499999999999], [Uncategorized, 969.69], [Gas, 349.56999999999994], [Tolls, 46.0], [Washington Gas, 92.0], [Verizon Cable/Internet, 180.7], [Dominion Electric, 114.13], [Netflix, 17.99], [Mortgage, 2677.73], [Sportrock, 105.0]], Jan 2025=[[I
   // get the summary sheet and add a the first column with all the data from the budgets sheet
-  const summarySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("All Months");
-  let catRow = 2;
-  summarySheet.getRange(1, 1).setValue("Category");
-  summarySheet.getRange(1, 2).setValue("Budgeted");
-  for (const x in budgetMap) {
-    summarySheet.getRange(catRow, 1).setValue(x);
-    summarySheet.getRange(catRow, 2).setValue(budgetMap[x]);
-    catRow++;
-  }
-
-  for (const month in sheetNames) {
-    let currentRow = 2;
-
-    const monthName = sheetNames[month];
-    const monthData = summaryData[monthName];
-
-    const col = parseInt(month) + 3;
-    summarySheet.getRange(1, col).setValue(monthName);
-
-    // adds the categories as the first column
-    for (const x in budgetMap) {
-      summarySheet.getRange(currentRow, col).setValue(monthData[x]);
-      currentRow++;
-    }
-  }
+  const summarySheet = spreadsheet.getSheetByName("All Months");
+  const categories = Object.keys(budgetMap);
+  const output = [
+    ["Category", "Budgeted", ...sheetNames],
+    ...categories.map((category) => [
+      category,
+      budgetMap[category],
+      ...sheetNames.map((monthName) => summaryData[monthName][category] ?? ""),
+    ]),
+  ];
+  summarySheet.getRange(1, 1, output.length, output[0].length).setValues(output);
 }

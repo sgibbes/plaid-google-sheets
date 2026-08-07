@@ -1,26 +1,38 @@
 /** @format */
 
-function createChart(row, chartNum) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const categoryCol = headerRow.indexOf("Category Totals") + 1;
-  const actualCol = headerRow.indexOf("Actual") + 1;
-  const remainingCol = headerRow.indexOf("Remaining") + 1;
+function createChart(row, chartNum, chartData) {
+  const sheet = chartData
+    ? chartData.sheet
+    : SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  let categoryCol = chartData ? chartData.categoryCol : 0;
+  let actualCol = chartData ? chartData.actualCol : 0;
+  let remainingCol = chartData ? chartData.remainingCol : 0;
+
+  if (!chartData) {
+    const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    categoryCol = headerRow.indexOf("Category Totals") + 1;
+    actualCol = headerRow.indexOf("Actual") + 1;
+    remainingCol = headerRow.indexOf("Remaining") + 1;
+  }
 
   if (!categoryCol || !actualCol || !remainingCol) {
     throw new Error('Missing required summary headers: "Category Totals", "Actual", or "Remaining"');
   }
 
-  const cat = sheet.getRange(row, categoryCol).getValue();
-  const spent = sheet.getRange(row, actualCol).getValue();
-  const remaining = sheet.getRange(row, remainingCol).getValue();
-  const rowStart = chartNum * 3 - 2;
+  let cat = chartData ? chartData.category : null;
+  let spent = chartData ? chartData.spent : null;
+  let remaining = chartData ? chartData.remaining : null;
+  if (!chartData) {
+    const rowValues = sheet
+      .getRange(row, categoryCol, 1, remainingCol - categoryCol + 1)
+      .getValues()[0];
+    cat = rowValues[0];
+    spent = rowValues[actualCol - categoryCol];
+    remaining = rowValues[remainingCol - categoryCol];
+  }
 
-  const rowEnd = chartNum * 3;
   const startCol = remainingCol + 2 + (chartNum - 1) * 2;
-  Logger.log(`row start: ${rowStart}, col: ${startCol}, num rows: ${2}, num cols: ${2}`);
   const hiddenDataRange = sheet.getRange(1, startCol, 2, 2);
-  hiddenDataRange.clearContent();
   hiddenDataRange.setValues([
     ["Spent", spent],
     ["Remaining", remaining],

@@ -16,29 +16,19 @@ const CONTROL_CHECKBOX_COL = 9;
 
 function createDataInSheet(newSheetName, txAdjusted) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = spreadsheet.insertSheet(); // Creates a sheet with a default name
-  sheet.setName(newSheetName); // names new sheet
+  const sheet = spreadsheet.insertSheet(newSheetName);
+  const transactionRows = txAdjusted.map((tx) => getTransactionRow_(tx, {}));
+  const allRows = [TRANSACTION_HEADERS, ...transactionRows];
 
-  sheet.clearContents();
-  sheet.appendRow(TRANSACTION_HEADERS);
-  txAdjusted.forEach((tx) => {
-    sheet.appendRow(getTransactionRow_(tx, {}));
-  });
-
-  sheet.getRange(1, CONTROL_LABEL_COL).setValue("Clear Filter");
-  sheet.getRange(1, CONTROL_CHECKBOX_COL).insertCheckboxes();
-
-  sheet.getRange(2, CONTROL_LABEL_COL).setValue("Run Categories");
-  sheet.getRange(2, CONTROL_CHECKBOX_COL).insertCheckboxes();
-
-  sheet.getRange(3, CONTROL_LABEL_COL).setValue("Create Summary Table");
-  sheet.getRange(3, CONTROL_CHECKBOX_COL).insertCheckboxes();
-
-  sheet.getRange(4, CONTROL_LABEL_COL).setValue("Re-Download Data");
-  sheet.getRange(4, CONTROL_CHECKBOX_COL).insertCheckboxes();
-
-  sheet.getRange(5, CONTROL_LABEL_COL).setValue("Create Charts");
-  sheet.getRange(5, CONTROL_CHECKBOX_COL).insertCheckboxes();
+  sheet.getRange(1, 1, allRows.length, TRANSACTION_HEADERS.length).setValues(allRows);
+  sheet.getRange(1, CONTROL_LABEL_COL, 5, 2).setValues([
+    ["Clear Filter", false],
+    ["Run Categories", false],
+    ["Create Summary Table", false],
+    ["Re-Download Data", false],
+    ["Create Charts", false],
+  ]);
+  sheet.getRange(1, CONTROL_CHECKBOX_COL, 5, 1).insertCheckboxes();
 
   sheet.autoResizeColumns(1, 10);
 }
@@ -128,6 +118,44 @@ function getExistingSubcategories_(sheet) {
   return getExistingTransactionValues_(sheet, "SubCategory");
 }
 
+function getTransactionAppendState_(sheet) {
+  const rowCount = Math.max(sheet.getLastRow() - 1, 0);
+  if (rowCount === 0) {
+    return { lastTransactionRow: 1, latestDate: null };
+  }
+
+  const dateValues = sheet.getRange(2, 1, rowCount, 1).getValues();
+  let lastTransactionRow = 1;
+  let latestDate = null;
+
+  dateValues.forEach((row, index) => {
+    const value = row[0];
+    if (value === "") {
+      return;
+    }
+
+    lastTransactionRow = index + 2;
+    let isoDate = null;
+    if (value instanceof Date && !isNaN(value.getTime())) {
+      isoDate = Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    } else {
+      const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+      isoDate = match ? match[1] : null;
+    }
+
+    if (isoDate && (!latestDate || isoDate > latestDate)) {
+      latestDate = isoDate;
+    }
+  });
+
+  return { lastTransactionRow, latestDate };
+}
+
+function getNextIsoDate_(isoDate) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+}
+
 function ensureTransactionLayout_(sheet) {
   let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   let categoryCol = headers.indexOf("Category") + 1;
@@ -144,9 +172,12 @@ function ensureTransactionLayout_(sheet) {
   if (notesCol === TRANSACTION_SUBCATEGORY_COL) {
     sheet.insertColumnAfter(TRANSACTION_CATEGORY_COL);
     notesCol++;
+    headers.splice(TRANSACTION_SUBCATEGORY_COL - 1, 0, "");
   }
 
-  sheet.getRange(1, TRANSACTION_SUBCATEGORY_COL).setValue("SubCategory");
+  if (headers[TRANSACTION_SUBCATEGORY_COL - 1] !== "SubCategory") {
+    sheet.getRange(1, TRANSACTION_SUBCATEGORY_COL).setValue("SubCategory");
+  }
 
   if (!notesCol) {
     sheet.getRange(1, TRANSACTION_NOTES_COL).setValue("Notes");
@@ -223,8 +254,98 @@ function getTransactionsForAccessToken_(accessToken, startDate, endDate) {
   return transactions;
 }
 
+function getTransactionsForAccessTokens_(accessTokens, startDate, endDate) {
+  const { clientId, secret } = getPlaidCredentials_();
+  const pageSize = 500;
+  const request = (url, accessToken, options) => ({
+    url,
+    method: "post",
+    contentType: "application/json",
+    muteHttpExceptions: true,
+    payload: JSON.stringify({
+      client_id: clientId,
+      secret,
+      access_token: accessToken,
+      ...(url.endsWith("/transactions/get")
+        ? { start_date: startDate, end_date: endDate, options }
+        : {}),
+    }),
+  });
+  const parseResponse = (response, operation) => {
+    const text = response.getContentText();
+    const data = JSON.parse(text);
+    if (response.getResponseCode() >= 400) {
+      throw new Error("Plaid " + operation + " failed: " + text);
+    }
+    return data;
+  };
+
+  // Account metadata and the first transaction page for every linked item can
+  // be fetched concurrently.
+  const initialRequests = accessTokens.flatMap((accessToken) => [
+    request("https://production.plaid.com/accounts/get", accessToken),
+    request("https://production.plaid.com/transactions/get", accessToken, {
+      offset: 0,
+      count: pageSize,
+    }),
+  ]);
+  const initialResponses = UrlFetchApp.fetchAll(initialRequests);
+  const itemResults = accessTokens.map((accessToken, index) => {
+    const accountData = parseResponse(initialResponses[index * 2], "accounts/get");
+    const transactionData = parseResponse(
+      initialResponses[index * 2 + 1],
+      "transactions/get",
+    );
+    if (!accountData.accounts || !transactionData.transactions) {
+      throw new Error("Plaid returned an incomplete accounts or transactions response.");
+    }
+
+    const accountLookup = accountData.accounts.reduce((lookup, account) => {
+      lookup[account.account_id] = getAccountDisplayName_(account);
+      return lookup;
+    }, {});
+    return {
+      accessToken,
+      accountLookup,
+      total: transactionData.total_transactions,
+      transactions: transactionData.transactions,
+    };
+  });
+
+  const additionalPages = [];
+  itemResults.forEach((item, itemIndex) => {
+    for (let offset = pageSize; offset < item.total; offset += pageSize) {
+      additionalPages.push({
+        itemIndex,
+        request: request("https://production.plaid.com/transactions/get", item.accessToken, {
+          offset,
+          count: pageSize,
+        }),
+      });
+    }
+  });
+
+  if (additionalPages.length > 0) {
+    const responses = UrlFetchApp.fetchAll(additionalPages.map((page) => page.request));
+    responses.forEach((response, index) => {
+      const data = parseResponse(response, "transactions/get");
+      if (!data.transactions) {
+        throw new Error("Plaid returned an incomplete transactions response.");
+      }
+      itemResults[additionalPages[index].itemIndex].transactions.push(...data.transactions);
+    });
+  }
+
+  return itemResults.flatMap((item) =>
+    item.transactions.map((transaction) => ({
+      ...transaction,
+      accountName:
+        item.accountLookup[transaction.account_id] || transaction.account_id || "",
+    })),
+  );
+}
+
 function getRealTransactions(userMonth = null, userYear = null, append = false) {
-  Logger.log(append);
   const accessTokens = getPlaidAccessTokens_();
   if (accessTokens.length === 0) {
     throw new Error("No access token found. Run launchPlaidLink() first.");
@@ -265,7 +386,28 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
     endDate = `${year}-${month}-${getEndDayNum(year, month)}`;
   }
 
-  const transactions = accessTokens.flatMap((accessToken) => getTransactionsForAccessToken_(accessToken, startDate, endDate));
+  const newSheetName = `${month}-${year}`;
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetToCheck = spreadsheet.getSheetByName(newSheetName);
+  let appendState = null;
+
+  if (append && sheetToCheck) {
+    ensureTransactionLayout_(sheetToCheck);
+    appendState = getTransactionAppendState_(sheetToCheck);
+    const today = new Date().toISOString().slice(0, 10);
+    endDate = endDate > today ? today : endDate;
+
+    if (appendState.latestDate) {
+      startDate = getNextIsoDate_(appendState.latestDate);
+    }
+
+    if (startDate > endDate) {
+      spreadsheet.toast("No new transaction dates to download.");
+      return;
+    }
+  }
+
+  const transactions = getTransactionsForAccessTokens_(accessTokens, startDate, endDate);
   const txSorted = [...transactions].sort((a, b) => {
     const dateA = new Date(a.datetime || a.date);
     const dateB = new Date(b.datetime || b.date);
@@ -276,7 +418,6 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
 
     return (a.transaction_id || "").localeCompare(b.transaction_id || "");
   });
-  Logger.log(txSorted.filter((x) => x.pending));
   const txAdjusted = txSorted
     .map((tx) => {
       const adjustedAmount = tx.amount < 0 ? Math.abs(tx.amount) : -tx.amount;
@@ -285,17 +426,7 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
     })
     .filter((tx) => !shouldExcludeTransaction_(tx));
 
-  const newSheetName = `${month}-${year}`;
-  Logger.log({ newSheetName });
-
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const sheetToCheck = spreadsheet.getSheetByName(newSheetName);
-  Logger.log({ sheetToCheck });
-  Logger.log({ append });
-
   if (sheetToCheck && !append) {
-    Logger.log("here");
-
     const response = Browser.msgBox(
       `Sheet ${newSheetName} already exists. Overwrite sheet?`, // message
       Browser.Buttons.OK_CANCEL // button set
@@ -303,9 +434,6 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
 
     if (response === "ok") {
       spreadsheet.deleteSheet(sheetToCheck);
-
-      createDataInSheet(newSheetName, txAdjusted);
-    } else if (!sheetToCheck) {
       createDataInSheet(newSheetName, txAdjusted);
     } else {
       return;
@@ -314,45 +442,25 @@ function getRealTransactions(userMonth = null, userYear = null, append = false) 
 
   // the sheet does not already exist
   if (!sheetToCheck) {
-    const sheet = spreadsheet.insertSheet(); // Creates a sheet with a default name
-    sheet.setName(newSheetName); // names new sheet
-
-    sheet.clearContents();
-    sheet.appendRow(TRANSACTION_HEADERS);
-    txAdjusted.forEach((tx) => {
-      sheet.appendRow(getTransactionRow_(tx, {}));
-    });
-
-    sheet.getRange(1, CONTROL_LABEL_COL).setValue("Clear Filter");
-    sheet.getRange(1, CONTROL_CHECKBOX_COL).insertCheckboxes();
-
-    sheet.getRange(2, CONTROL_LABEL_COL).setValue("Run Categories");
-    sheet.getRange(2, CONTROL_CHECKBOX_COL).insertCheckboxes();
-
-    sheet.getRange(3, CONTROL_LABEL_COL).setValue("Create Summary Table");
-    sheet.getRange(3, CONTROL_CHECKBOX_COL).insertCheckboxes();
-
-    sheet.getRange(4, CONTROL_LABEL_COL).setValue("Re-Download Data");
-    sheet.getRange(4, CONTROL_CHECKBOX_COL).insertCheckboxes();
-
-    sheet.getRange(5, CONTROL_LABEL_COL).setValue("Create Charts");
-    sheet.getRange(5, CONTROL_CHECKBOX_COL).insertCheckboxes();
-
-    sheet.autoResizeColumns(1, 10);
+    createDataInSheet(newSheetName, txAdjusted);
+    return;
   }
 
   if (append) {
-    const sheet = sheetToCheck || spreadsheet.getActiveSheet();
-    ensureTransactionLayout_(sheet);
-    const existingNotes = getExistingNotes_(sheet);
-    const existingSubcategories = getExistingSubcategories_(sheet);
-    const values = txAdjusted.map((tx) => getTransactionRow_(tx, existingNotes, existingSubcategories));
-
-    sheet.getRange(1, 1, 1, TRANSACTION_HEADERS.length).setValues([TRANSACTION_HEADERS]);
-    sheet.getRange(2, 1, sheet.getMaxRows() - 1, TRANSACTION_HEADERS.length).clearContent();
+    const values = txAdjusted.map((tx) => getTransactionRow_(tx));
 
     if (values.length > 0) {
-      sheet.getRange(2, 1, values.length, TRANSACTION_HEADERS.length).setValues(values); //row, col, numRows, num cols
+      sheetToCheck
+        .getRange(
+          appendState.lastTransactionRow + 1,
+          1,
+          values.length,
+          TRANSACTION_HEADERS.length,
+        )
+        .setValues(values);
+      spreadsheet.toast(values.length + " new transactions appended.");
+    } else {
+      spreadsheet.toast("No new transactions found.");
     }
   }
 }
@@ -366,19 +474,26 @@ function getAccounts() {
     throw new Error("No access token found. Run launchPlaidLink() first.");
   }
 
-  accessTokens.forEach((accessToken) => {
-    const response = UrlFetchApp.fetch("https://production.plaid.com/accounts/get", {
+  const responses = UrlFetchApp.fetchAll(
+    accessTokens.map((accessToken) => ({
+      url: "https://production.plaid.com/accounts/get",
       method: "post",
       contentType: "application/json",
+      muteHttpExceptions: true,
       payload: JSON.stringify({
         client_id: clientId,
         secret: secret,
         access_token: accessToken,
       }),
-    });
-    const data = JSON.parse(response.getContentText());
-    Logger.log(data.accounts);
+    })),
+  );
 
+  responses.forEach((response) => {
+    const data = JSON.parse(response.getContentText());
+    if (response.getResponseCode() >= 400 || !data.accounts) {
+      throw new Error("Plaid accounts/get failed: " + response.getContentText());
+    }
+    Logger.log(data.accounts);
     Logger.log(JSON.stringify(data.accounts, null, 2));
   });
 }

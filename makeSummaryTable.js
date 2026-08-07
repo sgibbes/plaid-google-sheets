@@ -4,21 +4,20 @@ function summarizeByCategory() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   ensureTransactionLayout_(sheet);
 
-  const data = sheet.getDataRange().getValues(); // includes headers
+  const data = sheet
+    .getRange(1, 1, Math.max(sheet.getLastRow(), 1), TRANSACTION_NOTES_COL)
+    .getValues();
   const headers = data[0];
   const categoryColIndex = headers.indexOf("Category");
   const subcategoryColIndex = headers.indexOf("SubCategory");
-  const outputColStart = categoryColIndex + 7; // accounts for SubCategory and Notes after Category
-
-  // clear contents
-  const rangeToClear = sheet.getRange(1, outputColStart, 2000, 8);
-  rangeToClear.clear();
-
   const amountColIndex = headers.indexOf("Transaction Amount");
 
   if (categoryColIndex === -1 || subcategoryColIndex === -1 || amountColIndex === -1) {
     throw new Error('Missing required headers: "Category", "SubCategory", or "Transaction Amount"');
   }
+
+  const outputColStart = categoryColIndex + 7; // accounts for SubCategory and Notes after Category
+  sheet.getRange(1, outputColStart, sheet.getMaxRows(), 8).clear();
 
   const subcategoriesByCategory = new Map();
   data.slice(1).forEach((row) => {
@@ -29,11 +28,9 @@ function summarizeByCategory() {
     }
 
     const categoryKey = category.toLowerCase();
-    const subcategories = subcategoriesByCategory.get(categoryKey) || [];
-    if (!subcategories.some((value) => value.toLowerCase() === subcategory.toLowerCase())) {
-      subcategories.push(subcategory);
-      subcategoriesByCategory.set(categoryKey, subcategories);
-    }
+    const subcategories = subcategoriesByCategory.get(categoryKey) || new Map();
+    subcategories.set(subcategory.toLowerCase(), subcategory);
+    subcategoriesByCategory.set(categoryKey, subcategories);
   });
 
   // Fetch Samaris's budget values from the monthly budget sheet.
@@ -45,7 +42,9 @@ function summarizeByCategory() {
     throw new Error('Missing sheet: "' + budgetSheetName + '". Check the tab name.');
   }
 
-  const budgetData = budgetSheet.getDataRange().getDisplayValues();
+  const budgetData = budgetSheet
+    .getRange(1, 1, Math.max(budgetSheet.getLastRow(), 1), 8)
+    .getDisplayValues();
   const expenseSources = [];
 
   budgetData.slice(1).forEach((row, rowIndex) => {
@@ -56,8 +55,8 @@ function summarizeByCategory() {
       const budgetRow = rowIndex + 2;
       expenseSources.push({
         category: expense,
-        expense: "'" + budgetSheetName + "'!" + budgetSheet.getRange(budgetRow, 1).getA1Notation(),
-        amount: "'" + budgetSheetName + "'!" + budgetSheet.getRange(budgetRow, 4).getA1Notation(),
+        expense: "'" + budgetSheetName + "'!A" + budgetRow,
+        amount: "'" + budgetSheetName + "'!D" + budgetRow,
       });
     }
   });
@@ -75,14 +74,9 @@ function summarizeByCategory() {
 
   const totalRowStart = 1; // leave one blank row after data
 
-  // Write headers
-  sheet.getRange(totalRowStart, outputColStart).setValue("Filter");
-
-  sheet.getRange(totalRowStart, outputColStart + 1).setValue("Category Totals");
-  sheet.getRange(totalRowStart, outputColStart + 2).setValue("Budgeted");
-  sheet.getRange(totalRowStart, outputColStart + 3).setValue("Actual");
-  sheet.getRange(totalRowStart, outputColStart + 4).setValue("Subcategory Totals");
-  sheet.getRange(totalRowStart, outputColStart + 5).setValue("Remaining");
+  sheet.getRange(totalRowStart, outputColStart, 1, 6).setValues([
+    ["Filter", "Category Totals", "Budgeted", "Actual", "Subcategory Totals", "Remaining"],
+  ]);
 
   // Overall totals and balance calculations live two columns to the right of
   // Remaining (R:S in the standard transaction layout).
@@ -101,44 +95,24 @@ function summarizeByCategory() {
   sheet.getRange(2, balanceValueCol, 3, 1).setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
   sheet.getRange(6, balanceValueCol, 3, 1).setNumberFormat("$#,##0.00;[Red]-$#,##0.00");
 
+  const transactionCategoryCol = getColumnLetter_(categoryColIndex + 1);
+  const transactionAmountCol = getColumnLetter_(amountColIndex + 1);
+  const transactionSubcategoryCol = getColumnLetter_(subcategoryColIndex + 1);
+  const summaryCategoryCol = getColumnLetter_(outputColStart + 1);
+  const summaryBudgetCol = getColumnLetter_(outputColStart + 2);
+  const summaryActualCol = getColumnLetter_(outputColStart + 3);
+  const summaryRows = [];
+  const checkboxValidations = [];
+  const categoryAlignments = [];
+  const checkboxRule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
   let currentRow = totalRowStart + 1;
+
   for (const expenseSource of expenseSources) {
-    // Parent category rows can be selected by the summary filter.
-    const checkboxCell = sheet.getRange(currentRow, outputColStart);
-    checkboxCell.insertCheckboxes();
-    checkboxCell.setValue(false);
-
-    const categoryCell = sheet.getRange(currentRow, outputColStart + 1);
-    const budgetCell = sheet.getRange(currentRow, outputColStart + 2);
-    const actualCell = sheet.getRange(currentRow, outputColStart + 3);
-    const remainingCell = sheet.getRange(currentRow, outputColStart + 5);
-
-    if (expenseSource.expense) {
-      categoryCell.setFormula("=" + expenseSource.expense);
-    } else {
-      categoryCell.setValue(expenseSource.category);
-    }
-
-    const categoryRef = categoryCell.getA1Notation();
-    const transactionCategoryCol = sheet
-      .getRange(1, categoryColIndex + 1)
-      .getA1Notation()
-      .replace(/\d+/g, "");
-    const transactionAmountCol = sheet
-      .getRange(1, amountColIndex + 1)
-      .getA1Notation()
-      .replace(/\d+/g, "");
-    const transactionSubcategoryCol = sheet
-      .getRange(1, subcategoryColIndex + 1)
-      .getA1Notation()
-      .replace(/\d+/g, "");
-
-    if (expenseSource.amount) {
-      budgetCell.setFormula("=" + expenseSource.amount);
-    } else {
-      budgetCell.setValue(0);
-    }
-    actualCell.setFormula(
+    const categoryRef = summaryCategoryCol + currentRow;
+    summaryRows.push([
+      false,
+      expenseSource.expense ? "=" + expenseSource.expense : expenseSource.category,
+      expenseSource.amount ? "=" + expenseSource.amount : 0,
       "=SUMIFS($" +
         transactionAmountCol +
         ":$" +
@@ -150,23 +124,23 @@ function summarizeByCategory() {
         "," +
         categoryRef +
         ")*-1",
-    );
-    remainingCell.setFormula("=" + budgetCell.getA1Notation() + "-" + actualCell.getA1Notation());
+      "",
+      "=" + summaryBudgetCol + currentRow + "-" + summaryActualCol + currentRow,
+    ]);
+    checkboxValidations.push([checkboxRule]);
+    categoryAlignments.push([null]);
 
     currentRow++;
 
-    const subcategories = subcategoriesByCategory.get(expenseSource.category.toLowerCase()) || [];
+    const subcategoryMap = subcategoriesByCategory.get(expenseSource.category.toLowerCase());
+    const subcategories = subcategoryMap ? [...subcategoryMap.values()] : [];
     for (const subcategory of subcategories) {
-      const subcategoryFilterCell = sheet.getRange(currentRow, outputColStart);
-      const subcategoryCell = sheet.getRange(currentRow, outputColStart + 1);
-      const subcategoryActualCell = sheet.getRange(currentRow, outputColStart + 4);
-      subcategoryFilterCell.clearContent();
-      subcategoryFilterCell.clearDataValidations();
-      subcategoryCell.setValue(subcategory);
-      subcategoryCell.setHorizontalAlignment("right");
-
-      const subcategoryRef = subcategoryCell.getA1Notation();
-      subcategoryActualCell.setFormula(
+      const subcategoryRef = summaryCategoryCol + currentRow;
+      summaryRows.push([
+        "",
+        subcategory,
+        "",
+        "",
         "=SUMIFS($" +
           transactionAmountCol +
           ":$" +
@@ -184,15 +158,26 @@ function summarizeByCategory() {
           "," +
           subcategoryRef +
           ")*-1",
-      );
+        "",
+      ]);
+      checkboxValidations.push([null]);
+      categoryAlignments.push(["right"]);
 
       currentRow++;
     }
   }
 
-  // set formats to currency
-  const numRows = currentRow - (totalRowStart + 1);
+  const numRows = summaryRows.length;
   if (numRows > 0) {
+    const summaryRange = sheet.getRange(totalRowStart + 1, outputColStart, numRows, 6);
+    summaryRange.setValues(summaryRows);
+    sheet
+      .getRange(totalRowStart + 1, outputColStart, numRows, 1)
+      .setDataValidations(checkboxValidations);
+    sheet
+      .getRange(totalRowStart + 1, outputColStart + 1, numRows, 1)
+      .setHorizontalAlignments(categoryAlignments);
+
     const currencyRange = sheet.getRange(totalRowStart + 1, outputColStart + 2, numRows, 4);
     currencyRange.setNumberFormat("$#,##0.00");
     sheet
@@ -272,4 +257,12 @@ function setSummaryConditionalFormatting_(sheet, categoryCol, remainingCol, bala
       .build(),
   );
   sheet.setConditionalFormatRules(rules);
+}
+
+function getColumnLetter_(column) {
+  let result = "";
+  for (let value = column; value > 0; value = Math.floor((value - 1) / 26)) {
+    result = String.fromCharCode(((value - 1) % 26) + 65) + result;
+  }
+  return result;
 }

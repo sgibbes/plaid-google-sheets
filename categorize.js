@@ -82,7 +82,9 @@ function categorizeTransactions() {
   }
 
   const categoryRange = sheet.getRange(2, catColNum, lastTransactionIndex, 1);
-  const categoryValues = categoryRange.getValues();
+  const categoryValues = data
+    .slice(1, lastTransactionIndex + 1)
+    .map((row) => [row[catColNum - 1]]);
 
   for (let i = 0; i < categoryValues.length; i++) {
     // Keep categories that were assigned or edited manually.

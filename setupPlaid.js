@@ -114,18 +114,25 @@ function checkTokenInfo() {
     throw new Error("No access token found. Run launchPlaidLink() first.");
   }
 
-  accessTokens.forEach((accessToken) => {
-    const res = UrlFetchApp.fetch("https://production.plaid.com/item/get", {
+  const responses = UrlFetchApp.fetchAll(
+    accessTokens.map((accessToken) => ({
+      url: "https://production.plaid.com/item/get",
       method: "post",
       contentType: "application/json",
+      muteHttpExceptions: true,
       payload: JSON.stringify({
         client_id: clientId,
         secret: secret,
         access_token: accessToken,
       }),
-    });
+    })),
+  );
 
-    Logger.log(res.getContentText());
+  responses.forEach((response) => {
+    if (response.getResponseCode() >= 400) {
+      throw new Error("Plaid item/get failed: " + response.getContentText());
+    }
+    Logger.log(response.getContentText());
   });
 }
 
@@ -139,21 +146,25 @@ function fullyUnlinkAccount() {
     return;
   }
 
-  const url = "https://production.plaid.com/item/remove";
-  accessTokens.forEach((accessToken) => {
-    const payload = {
-      client_id: clientId,
-      secret: secret,
-      access_token: accessToken,
-    };
-
-    const response = UrlFetchApp.fetch(url, {
+  const responses = UrlFetchApp.fetchAll(
+    accessTokens.map((accessToken) => ({
+      url: "https://production.plaid.com/item/remove",
       method: "post",
       contentType: "application/json",
-      payload: JSON.stringify(payload),
-    });
+      muteHttpExceptions: true,
+      payload: JSON.stringify({
+        client_id: clientId,
+        secret: secret,
+        access_token: accessToken,
+      }),
+    })),
+  );
 
+  responses.forEach((response) => {
     const result = JSON.parse(response.getContentText());
+    if (response.getResponseCode() >= 400) {
+      throw new Error("Plaid item/remove failed: " + response.getContentText());
+    }
     Logger.log("Unlink response: " + JSON.stringify(result));
   });
 
